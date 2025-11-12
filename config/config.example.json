@@ -1,0 +1,30 @@
+{
+  "betfair": {
+    "app_key": "YOUR_APP_KEY_HERE",
+    "username": "YOUR_USERNAME_HERE",
+    "certificate_path": "certificates/client-2048.crt",
+    "key_path": "certificates/client-2048.key",
+    "login_endpoint": "https://identitysso-cert.betfair.it/api/certlogin",
+    "api_endpoint": "https://api.betfair.com/exchange/betting/rest/v1.0",
+    "account_endpoint": "https://api.betfair.com/exchange/account/rest/v1.0"
+  },
+  "monitoring": {
+    "event_type_ids": [1],
+    "competition_ids": [],
+    "polling_interval_seconds": 10,
+    "in_play_only": true
+  },
+  "logging": {
+    "level": "INFO",
+    "file_path": "logs/betfair_bot.log",
+    "max_bytes": 10485760,
+    "backup_count": 5,
+    "console_output": true,
+    "clear_on_start": true
+  },
+  "session": {
+    "keep_alive_interval_seconds": 300,
+    "session_timeout_seconds": 3600
+  }
+}
+
