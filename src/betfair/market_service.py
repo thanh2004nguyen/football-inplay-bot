@@ -152,7 +152,7 @@ class MarketService:
             result = response.json()
             markets = result if isinstance(result, list) else []
             
-            logger.info(f"Retrieved {len(markets)} markets from catalogue")
+            logger.debug(f"Retrieved {len(markets)} markets from catalogue")
             return markets
             
         except requests.exceptions.HTTPError as e:

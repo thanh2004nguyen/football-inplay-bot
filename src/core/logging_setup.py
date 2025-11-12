@@ -53,21 +53,35 @@ def setup_logging(log_config: dict) -> logging.Logger:
     # Console formatter - only show message (clean output)
     console_formatter = logging.Formatter('%(message)s')
     
-    # File handler with rotation
+    # File handler with rotation (UTF-8 encoding for Unicode support)
     file_handler = RotatingFileHandler(
         log_file_path,
         maxBytes=log_config.get("max_bytes", 10485760),  # 10MB default
-        backupCount=log_config.get("backup_count", 5)
+        backupCount=log_config.get("backup_count", 5),
+        encoding='utf-8'  # Support Unicode characters
     )
     file_handler.setLevel(log_level)
     file_handler.setFormatter(file_formatter)
     logger.addHandler(file_handler)
     
-    # Console handler
+    # Console handler (with error handling for Windows console encoding issues)
     if log_config.get("console_output", True):
         console_handler = logging.StreamHandler()
         console_handler.setLevel(log_level)
         console_handler.setFormatter(console_formatter)
+        # Wrap stream to handle encoding errors gracefully
+        import sys
+        if sys.stdout.encoding and sys.stdout.encoding.lower() in ['cp1252', 'windows-1252']:
+            # On Windows with cp1252, replace problematic characters
+            original_emit = console_handler.emit
+            def safe_emit(record):
+                try:
+                    original_emit(record)
+                except UnicodeEncodeError:
+                    # Replace problematic Unicode characters with ASCII equivalents
+                    record.msg = str(record.msg).encode('ascii', 'replace').decode('ascii')
+                    original_emit(record)
+            console_handler.emit = safe_emit
         logger.addHandler(console_handler)
     
     logger.info("Logging initialized successfully")

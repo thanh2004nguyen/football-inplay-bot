@@ -1,0 +1,202 @@
+"""
+Qualification Logic Module
+Determines if a match qualifies for betting based on goals in 60-74 minute window
+Handles VAR (cancelled goals) and 0-0 exception
+Also handles early discard if match is out of target at minute 60
+"""
+import logging
+from typing import List, Dict, Any, Tuple, Set, Optional
+
+logger = logging.getLogger("BetfairBot")
+
+
+def filter_cancelled_goals(goals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Filter out cancelled goals (VAR)
+    
+    Args:
+        goals: List of goal dictionaries
+    
+    Returns:
+        List of valid (non-cancelled) goals
+    """
+    valid_goals = []
+    
+    for goal in goals:
+        cancelled = goal.get('cancelled', False)
+        
+        # Handle string values
+        if isinstance(cancelled, str):
+            cancelled = cancelled.lower() in ['true', 'yes', '1', 'cancelled']
+        
+        if not cancelled:
+            valid_goals.append(goal)
+        else:
+            minute = goal.get('minute', 'N/A')
+            logger.debug(f"Filtered out cancelled goal at minute {minute} (VAR)")
+    
+    return valid_goals
+
+
+def check_goal_in_window(goals: List[Dict[str, Any]], start_minute: int, end_minute: int) -> bool:
+    """
+    Check if there's a valid goal in the specified minute window
+    
+    Args:
+        goals: List of goal dictionaries (should already be filtered for cancelled)
+        start_minute: Start of window (e.g., 60)
+        end_minute: End of window (e.g., 74)
+    
+    Returns:
+        True if there's at least one goal in the window, False otherwise
+    """
+    for goal in goals:
+        minute = goal.get('minute', 0)
+        if start_minute <= minute <= end_minute:
+            return True
+    
+    return False
+
+
+def check_zero_zero_exception(score: str, current_minute: int, 
+                             competition_name: str,
+                             zero_zero_exception_competitions: Set[str]) -> Tuple[bool, str]:
+    """
+    Check if 0-0 exception applies
+    
+    Args:
+        score: Current score (e.g., "0-0", "1-0")
+        current_minute: Current match minute
+        competition_name: Competition name
+        zero_zero_exception_competitions: Set of competitions with 0-0 exception
+    
+    Returns:
+        (is_qualified, reason)
+    """
+    # Check if score is 0-0
+    if score != "0-0":
+        return False, "Score is not 0-0"
+    
+    # Check if in 60-74 minute window
+    if not (60 <= current_minute <= 74):
+        return False, f"Not in 60-74 window (current: {current_minute})"
+    
+    # Check if competition is in exception list
+    if competition_name in zero_zero_exception_competitions:
+        logger.info(f"0-0 exception applies for '{competition_name}' at minute {current_minute}")
+        return True, "0-0 exception (competition allowed)"
+    else:
+        logger.debug(f"0-0 score but competition '{competition_name}' not in exception list")
+        return False, "0-0 but competition not in exception list"
+
+
+def is_out_of_target(score: str, current_minute: int, target_over: float) -> Tuple[bool, str]:
+    """
+    Check if match is out of target at minute 60
+    
+    A match is out of target if:
+    1. Current total goals >= (target_over + 0.5) at minute 60
+    2. Current total goals = target_over at minute 60 (one goal in 60-74 would make it out of target)
+    
+    Args:
+        score: Current score (e.g., "2-1", "0-0")
+        current_minute: Current match minute
+        target_over: Target Over X.5 value (e.g., 2.5 for Over 2.5)
+    
+    Returns:
+        (is_out_of_target, reason)
+    """
+    if current_minute != 60:
+        return False, "Not at minute 60"
+    
+    try:
+        # Parse score
+        parts = score.split("-")
+        if len(parts) != 2:
+            return False, "Invalid score format"
+        
+        home_goals = int(parts[0].strip())
+        away_goals = int(parts[1].strip())
+        total_goals = home_goals + away_goals
+        
+        # Check if already out of target (total goals >= target + 0.5)
+        # For Over 2.5: if total >= 3, already out of target
+        if total_goals >= int(target_over) + 1:
+            return True, f"Score {score} ({total_goals} goals) already exceeds target Over {target_over} at minute 60"
+        
+        # Check if one goal would make it out of target
+        # For Over 2.5: if total = 2, one goal would make it 3 (out of target)
+        if total_goals == int(target_over):
+            return True, f"Score {score} ({total_goals} goals) at target Over {target_over} - one goal in 60-74 would exceed target"
+        
+        return False, f"Score {score} ({total_goals} goals) still within target Over {target_over}"
+        
+    except (ValueError, IndexError) as e:
+        logger.warning(f"Error parsing score '{score}': {str(e)}")
+        return False, f"Error parsing score: {str(e)}"
+
+
+def is_qualified(score: str, 
+                goals: List[Dict[str, Any]],
+                current_minute: int,
+                start_minute: int,
+                end_minute: int,
+                competition_name: str,
+                zero_zero_exception_competitions: Set[str],
+                var_check_enabled: bool = True,
+                target_over: Optional[float] = None,
+                early_discard_enabled: bool = True) -> Tuple[bool, str]:
+    """
+    Check if match is qualified for betting
+    
+    Args:
+        score: Current score (e.g., "0-0", "2-1")
+        goals: List of all goals (may include cancelled)
+        current_minute: Current match minute
+        start_minute: Start of goal detection window (e.g., 60)
+        end_minute: End of goal detection window (e.g., 74)
+        competition_name: Competition name
+        zero_zero_exception_competitions: Set of competitions with 0-0 exception
+        var_check_enabled: Whether to filter cancelled goals
+    
+    Returns:
+        (is_qualified, reason)
+    """
+    # Early discard check: if at minute 60 and out of target, immediately disqualify
+    if early_discard_enabled and target_over is not None and current_minute == 60:
+        out_of_target, reason = is_out_of_target(score, current_minute, target_over)
+        if out_of_target:
+            logger.info(f"Match out of target at minute 60: {reason}")
+            return False, f"Out of target: {reason}"
+    
+    # Filter cancelled goals if VAR check is enabled
+    if var_check_enabled:
+        valid_goals = filter_cancelled_goals(goals)
+    else:
+        valid_goals = goals
+    
+    # Check 0-0 exception first (only if in window)
+    if 60 <= current_minute <= 74:
+        qualified, reason = check_zero_zero_exception(
+            score, current_minute, competition_name, zero_zero_exception_competitions
+        )
+        if qualified:
+            return True, reason
+    
+    # Check for goals in 60-74 window
+    if check_goal_in_window(valid_goals, start_minute, end_minute):
+        # Find the goal in the window
+        goal_in_window = None
+        for goal in valid_goals:
+            minute = goal.get('minute', 0)
+            if start_minute <= minute <= end_minute:
+                goal_in_window = goal
+                break
+        
+        if goal_in_window:
+            minute = goal_in_window.get('minute', 'N/A')
+            team = goal_in_window.get('team', 'N/A')
+            return True, f"Goal in {start_minute}-{end_minute} window (minute {minute}, team: {team})"
+    
+    return False, "No qualification (no goal in window, no 0-0 exception)"
+

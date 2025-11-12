@@ -111,6 +111,38 @@ LEAGUE_NORMALIZATION = {
     "rl northeast": "regionalliga northeast",
 }
 
+# Country keywords for matching (Excel country -> Betfair keywords)
+COUNTRY_KEYWORDS = {
+    "italy": ["italian", "italy"],
+    "england": ["english", "england"],
+    "spain": ["spanish", "spain"],
+    "france": ["french", "france"],
+    "germany": ["german", "germany"],
+    "brazil": ["brazilian", "brazil"],
+    "netherlands": ["dutch", "netherlands"],
+    "portugal": ["portuguese", "portugal"],
+    "poland": ["polish", "poland"],
+    "czech": ["czech"],
+    "romania": ["romanian", "romania"],
+    "serbia": ["serbian", "serbia"],
+    "slovakia": ["slovakian", "slovakia"],
+    "slovenia": ["slovenian", "slovenia"],
+    "turkey": ["turkish", "turkey"],
+    "greece": ["greek", "greece"],
+    "sweden": ["swedish", "sweden"],
+    "norway": ["norwegian", "norway"],
+    "denmark": ["danish", "denmark"],
+    "croatia": ["croatian", "croatia"],
+    "bulgaria": ["bulgarian", "bulgaria"],
+    "switzerland": ["swiss", "switzerland"],
+    "japan": ["japanese", "japan"],
+    "china": ["chinese", "china"],
+    "usa": ["us", "usa", "american"],
+    "scotland": ["scottish", "scotland"],
+    "argentina": ["argentinian", "argentina"],
+    "wales": ["welsh", "wales"],
+}
+
 
 def normalize_text(text: str) -> str:
     """Normalize text: lowercase, remove special chars, remove extra spaces, normalize numbers"""
@@ -228,6 +260,79 @@ def calculate_similarity(str1: str, str2: str) -> float:
     return len(intersection) / len(union)
 
 
+def check_country_match(excel_country: Optional[str], betfair_normalized: str) -> bool:
+    """
+    Check if Excel country matches Betfair competition name
+    
+    Args:
+        excel_country: Country from Excel (e.g., "italy", "england")
+        betfair_normalized: Normalized Betfair competition name
+    
+    Returns:
+        True if country matches
+    """
+    if not excel_country:
+        return False
+    
+    keywords = COUNTRY_KEYWORDS.get(excel_country, [excel_country])
+    return any(keyword in betfair_normalized for keyword in keywords)
+
+
+def check_league_match(excel_league: Optional[str], betfair_league: Optional[str]) -> bool:
+    """
+    Check if Excel league matches Betfair league
+    
+    Args:
+        excel_league: League from Excel
+        betfair_league: League from Betfair
+    
+    Returns:
+        True if leagues match (exact or substring)
+    """
+    if not excel_league or not betfair_league:
+        return False
+    
+    excel_league_norm = LEAGUE_NORMALIZATION.get(excel_league, excel_league)
+    betfair_league_norm = LEAGUE_NORMALIZATION.get(betfair_league, betfair_league)
+    
+    # Exact match or substring match
+    return (
+        excel_league_norm == betfair_league_norm or
+        excel_league_norm in betfair_league_norm or
+        betfair_league_norm in excel_league_norm
+    )
+
+
+def validate_country_and_league(excel_country: Optional[str],
+                                 excel_league: Optional[str],
+                                 betfair_normalized: str,
+                                 betfair_league: Optional[str]) -> bool:
+    """
+    Validate that both country and league match between Excel and Betfair
+    
+    Args:
+        excel_country: Country from Excel
+        excel_league: League from Excel
+        betfair_normalized: Normalized Betfair competition name
+        betfair_league: League from Betfair
+    
+    Returns:
+        True if both country and league match, or country matches if no league info
+    """
+    if not excel_country:
+        return True  # No country to validate
+    
+    country_match = check_country_match(excel_country, betfair_normalized)
+    
+    if excel_league:
+        # Both country and league must match
+        league_match = check_league_match(excel_league, betfair_league)
+        return country_match and league_match
+    else:
+        # Only country needs to match
+        return country_match
+
+
 def map_competitions_to_ids(competition_names: Set[str], 
                             betfair_competitions: List[Dict[str, Any]]) -> List[int]:
     """
@@ -242,7 +347,7 @@ def map_competitions_to_ids(competition_names: Set[str],
     """
     matched_ids = []
     
-    # Create a list of Betfair competitions with normalized names
+    # Create a list of Betfair competitions with normalized names and league names
     betfair_list = []
     for comp in betfair_competitions:
         comp_info = comp.get("competition", {})
@@ -251,7 +356,9 @@ def map_competitions_to_ids(competition_names: Set[str],
         
         if comp_id and comp_name:
             _, _, _, normalized = normalize_betfair_competition(comp_name)
-            betfair_list.append((comp_id, comp_name, normalized))
+            # Extract league name from Betfair competition
+            _, betfair_league, _, _ = normalize_betfair_competition(comp_name)
+            betfair_list.append((comp_id, comp_name, normalized, betfair_league))
     
     # Match Excel competition names with Betfair competitions
     unmatched_competitions = []
@@ -261,33 +368,96 @@ def map_competitions_to_ids(competition_names: Set[str],
         
         best_match = None
         best_similarity = 0.0
+        match_method = ""
         
-        for comp_id, betfair_name, betfair_normalized in betfair_list:
-            # Calculate similarity between normalized names
+        # Strategy 1: Full name similarity matching (strict)
+        for comp_id, betfair_name, betfair_normalized, betfair_league in betfair_list:
             similarity = calculate_similarity(excel_normalized, betfair_normalized)
             
-            # Only match if similarity is high (>= 0.8 means 80% of words match)
-            if similarity >= 0.8:
-                if similarity > best_similarity:
+            # Require high similarity (>= 0.75) to avoid false matches
+            if similarity >= 0.75:
+                # Additional validation: check if country and league match
+                is_valid = validate_country_and_league(
+                    excel_country, excel_league, betfair_normalized, betfair_league
+                )
+                
+                if is_valid and similarity > best_similarity:
                     best_similarity = similarity
                     best_match = (comp_id, betfair_name, similarity)
+                    match_method = "full_name"
         
-        if best_match:
+        # Strategy 2: League name matching (if we have league names) - STRICT
+        if excel_league and excel_country:  # Require both country and league
+            for comp_id, betfair_name, betfair_normalized, betfair_league in betfair_list:
+                if betfair_league:
+                    # Validate country match first
+                    if not check_country_match(excel_country, betfair_normalized):
+                        continue
+                    
+                    # Normalize league names using LEAGUE_NORMALIZATION
+                    excel_league_norm = LEAGUE_NORMALIZATION.get(excel_league, excel_league)
+                    betfair_league_norm = LEAGUE_NORMALIZATION.get(betfair_league, betfair_league)
+                    
+                    # Exact league match
+                    if excel_league_norm == betfair_league_norm:
+                        similarity = 0.95
+                        if similarity > best_similarity:
+                            best_similarity = similarity
+                            best_match = (comp_id, betfair_name, similarity)
+                            match_method = "league_exact"
+                    
+                    # Substring league match (strict: must be substantial)
+                    elif (excel_league_norm in betfair_league_norm or betfair_league_norm in excel_league_norm) and len(excel_league_norm) >= 4:
+                        similarity = 0.90
+                        if similarity > best_similarity:
+                            best_similarity = similarity
+                            best_match = (comp_id, betfair_name, similarity)
+                            match_method = "league_substring"
+                    
+                    # League similarity (strict threshold)
+                    else:
+                        league_similarity = calculate_similarity(excel_league_norm, betfair_league_norm)
+                        if league_similarity >= 0.85:  # Increased from 0.7 to 0.85 for strictness
+                            similarity = 0.85
+                            if similarity > best_similarity:
+                                best_similarity = similarity
+                                best_match = (comp_id, betfair_name, similarity)
+                                match_method = "league_similarity"
+        
+        # Strategy 3: Substring matching (fallback) - STRICT
+        if not best_match or best_similarity < 0.85:
+            for comp_id, betfair_name, betfair_normalized, betfair_league in betfair_list:
+                # Check if one contains the other (substantial match)
+                if excel_normalized in betfair_normalized or betfair_normalized in excel_normalized:
+                    if len(excel_normalized) >= 6 and len(betfair_normalized) >= 6:  # Increased from 4 to 6
+                        # Additional validation: check country match if available
+                        is_valid = True
+                        if excel_country:
+                            is_valid = check_country_match(excel_country, betfair_normalized)
+                        
+                        if is_valid:
+                            similarity = 0.80
+                            if similarity > best_similarity:
+                                best_similarity = similarity
+                                best_match = (comp_id, betfair_name, similarity)
+                                match_method = "substring"
+        
+        # Only accept if similarity >= 0.75 (strict threshold to avoid false matches)
+        if best_match and best_similarity >= 0.75:
             comp_id, betfair_name, similarity = best_match
             similarity_pct = int(similarity * 100)
             matched_ids.append(comp_id)
-            match_type = "EXACT" if similarity >= 0.95 else "HIGH_SIMILARITY"
-            logger.info(f"Matched ({match_type}, {similarity_pct}%): '{excel_name}' -> '{betfair_name}' (ID: {comp_id})")
+            match_type = "EXACT" if similarity >= 0.95 else "HIGH_SIMILARITY" if similarity >= 0.85 else "MEDIUM_SIMILARITY"
+            logger.info(f"Matched ({match_type}, {similarity_pct}%, {match_method}): '{excel_name}' -> '{betfair_name}' (ID: {comp_id})")
         else:
             unmatched_competitions.append(excel_name)
     
-    # Log summary (only at DEBUG level to keep logs clean)
+    # Log summary
     if unmatched_competitions:
-        logger.debug(f"No match found for {len(unmatched_competitions)} competition(s) - likely no active markets or name mismatch")
-        logger.debug(f"Unmatched competitions: {', '.join(unmatched_competitions[:10])}{'...' if len(unmatched_competitions) > 10 else ''}")
+        logger.warning(f"No match found for {len(unmatched_competitions)} competition(s): {', '.join(unmatched_competitions[:10])}{'...' if len(unmatched_competitions) > 10 else ''}")
     
-    # Only log summary of matched competitions (important info)
-    logger.info(f"Matched {len(matched_ids)} competition(s) from {len(competition_names)} Excel entries")
+    match_rate = len(matched_ids) / len(competition_names) * 100 if competition_names else 0
+    logger.info(f"Matched {len(matched_ids)} competition(s) from {len(competition_names)} Excel entries ({match_rate:.1f}%)")
     return list(set(matched_ids))  # Remove duplicates
 
 
@@ -314,4 +484,41 @@ def get_competition_ids_from_excel(excel_path: str,
     competition_ids = map_competitions_to_ids(competition_names, betfair_competitions)
     
     return competition_ids
+
+
+def get_competitions_with_zero_zero_exception(excel_path: str) -> Set[str]:
+    """
+    Read Excel to identify competitions with 0-0 exception
+    
+    Args:
+        excel_path: Path to Excel file
+    
+    Returns:
+        Set of competition names that have 0-0 exception (Result = "0-0")
+    """
+    try:
+        df = pd.read_excel(excel_path)
+        
+        # Check if 'Result' column exists
+        if 'Result' not in df.columns:
+            logger.warning("Column 'Result' not found in Excel file, no 0-0 exception competitions")
+            return set()
+        
+        # Filter rows where Result = "0-0" (case-insensitive, handle whitespace)
+        zero_zero_rows = df[
+            df['Result'].astype(str).str.strip().str.lower() == '0-0'
+        ]
+        
+        # Get unique competition names
+        competitions = zero_zero_rows['Competition'].dropna().unique().tolist()
+        
+        logger.info(f"Found {len(competitions)} competition(s) with 0-0 exception from Excel file")
+        if competitions:
+            logger.debug(f"0-0 exception competitions: {', '.join(competitions[:10])}{'...' if len(competitions) > 10 else ''}")
+        
+        return set(competitions)
+        
+    except Exception as e:
+        logger.error(f"Error reading 0-0 exception from Excel: {str(e)}")
+        return set()
 

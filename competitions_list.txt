@@ -1,0 +1,2070 @@
+================================================================================
+Live Score API - All Competitions List
+Total: 516 competitions
+Generated: N/A
+================================================================================
+
+[   1] ID:      1 | Bundesliga
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[   2] ID:     10 | Urvalsdeild
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[   3] ID:    100 | ÖFB Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[   4] ID:    101 | Cypriot Cup 
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[   5] ID:    102 | DBU Pokalen
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[   6] ID:    103 | Irish Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[   7] ID:    104 | Welsh Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[   8] ID:    105 | Scottish Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[   9] ID:    106 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  10] ID:    107 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  11] ID:    108 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  12] ID:    109 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  13] ID:     11 | Premier Division
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[  14] ID:    110 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  15] ID:    111 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  16] ID:    112 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  17] ID:    113 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  18] ID:    114 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  19] ID:    115 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  20] ID:    116 | Copa Colombia
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  21] ID:    117 | Copa MX
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  22] ID:    118 | US Open Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  23] ID:    119 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  24] ID:     12 | National Division
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[  25] ID:    120 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  26] ID:    121 | Korean Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  27] ID:    122 | FFA Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  28] ID:    123 | South African Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  29] ID:    124 | League Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  30] ID:    125 | 1st Deild
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[  31] ID:    126 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  32] ID:    127 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  33] ID:    128 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  34] ID:    129 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  35] ID:     13 | Eliteserien
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[  36] ID:    130 | Superliga
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[  37] ID:    131 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  38] ID:    132 | 1st Division
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[  39] ID:    133 | Erste Liga
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[  40] ID:    134 | Birinci Dasta
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[  41] ID:    135 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  42] ID:    136 | First Division B
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[  43] ID:    137 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  44] ID:    138 | 1st League
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[  45] ID:    139 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  46] ID:     14 | Allsvenskan
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[  47] ID:    140 | Second Professional League
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[  48] ID:    141 | 2nd League
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[  49] ID:    142 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  50] ID:    143 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  51] ID:    144 | 2nd Division
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[  52] ID:    145 | 2nd league
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[  53] ID:    146 | 3rd league
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 1
+
+[  54] ID:    147 | 1st Division
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[  55] ID:    148 | 2nd Division
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 1
+
+[  56] ID:    149 | Community Shield
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  57] ID:     15 | Super League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[  58] ID:    150 | EFL Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  59] ID:    151 | EFL Trophy
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  60] ID:    152 | FA Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  61] ID:    153 | FA Trophy
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  62] ID:    154 | National League
+      Country: N/A (ID: N/A)
+      Tier: 5 | League: 1 | Cup: 0 | Active: 1
+
+[  63] ID:    155 | National League North / South
+      Country: N/A (ID: N/A)
+      Tier: 6 | League: 1 | Cup: 0 | Active: 1
+
+[  64] ID:    156 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  65] ID:    157 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  66] ID:    158 | Ykkonen
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[  67] ID:    159 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  68] ID:     16 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[  69] ID:    160 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  70] ID:    161 | National 1
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 1
+
+[  71] ID:    162 | Coupe de France
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  72] ID:    163 | League Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  73] ID:    164 | Kakkonen
+      Country: N/A (ID: N/A)
+      Tier: 4 | League: 1 | Cup: 0 | Active: 0
+
+[  74] ID:    165 | Erovnuli Liga 2
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[  75] ID:    166 | 3rd Liga
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 1
+
+[  76] ID:    167 | DFB Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  77] ID:    168 | Regionalliga
+      Country: N/A (ID: N/A)
+      Tier: 4 | League: 1 | Cup: 0 | Active: 0
+
+[  78] ID:    169 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  79] ID:     17 | 1. HNL
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[  80] ID:    170 | Telekom Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 0
+
+[  81] ID:    171 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  82] ID:    172 | Gamma Ethniki
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 0
+
+[  83] ID:    173 | Super League 2
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[  84] ID:    174 | NB II
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[  85] ID:    175 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  86] ID:    176 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  87] ID:    177 | Leumit League
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[  88] ID:    178 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  89] ID:    179 | Coppa Italia
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  90] ID:     18 | Meistriliiga
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[  91] ID:    180 | Coppa Italia Serie C
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  92] ID:    181 | Serie C
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 1
+
+[  93] ID:    182 | Serie C Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  94] ID:    183 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[  95] ID:    184 | Superliga
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[  96] ID:    185 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  97] ID:    186 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[  98] ID:    187 | 1st League
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[  99] ID:    188 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 100] ID:    189 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 101] ID:     19 | NB I
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 102] ID:    190 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 103] ID:    191 | Challenge League
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 104] ID:    192 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 105] ID:    193 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 106] ID:    194 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 107] ID:    195 | 2nd League
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 108] ID:    196 | Eredivisie
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 109] ID:    197 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 110] ID:    198 | KNVB Beker
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 111] ID:    199 | Eerste Divisie
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 112] ID:      2 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 113] ID:     20 | Virsliga
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 114] ID:    200 | Prva Liga
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 115] ID:    201 | Vtora Liga
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 116] ID:    202 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 117] ID:    203 | League Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 118] ID:    204 | 1 Division
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 119] ID:    205 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 120] ID:    206 | NM Cupen
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 121] ID:    207 | 2nd Division
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 1
+
+[ 122] ID:    208 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 123] ID:    209 | 1st Liga
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 124] ID:     21 | First League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 125] ID:    210 | 2nd Liga
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 1
+
+[ 126] ID:    211 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 127] ID:    212 | Taca De Portugal
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 128] ID:    213 | League Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 129] ID:    214 | Campeonato de Portugal
+      Country: N/A (ID: N/A)
+      Tier: 4 | League: 1 | Cup: 0 | Active: 0
+
+[ 130] ID:    215 | FAI Presidents Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 131] ID:    216 | 1st Division
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 132] ID:    217 | FAI Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 133] ID:    218 | League Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 134] ID:    219 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 135] ID:     22 | Prva Liga
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 136] ID:    220 | Liga II
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 137] ID:    221 | League Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 0 | Active: 0
+
+[ 138] ID:    222 | CAF Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 139] ID:    223 | Champions League
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 140] ID:    224 | Confederations Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 141] ID:    225 | COSAFA Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 142] ID:    226 | African Nations Championship
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 143] ID:    227 | African Cup of Nations
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 144] ID:    228 | Africa Cup of Nations Qualifications
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 145] ID:    229 | Ligue 2
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 146] ID:     23 | Liga Professional
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 147] ID:    230 | Copa Argentina
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 148] ID:    231 | Copa de la Superliga
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 1 | Cup: 0 | Active: 0
+
+[ 149] ID:    232 | Torneo Federal A
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 1
+
+[ 150] ID:    233 | Primera B Metropolitana
+      Country: N/A (ID: N/A)
+      Tier: 4 | League: 1 | Cup: 0 | Active: 1
+
+[ 151] ID:    234 | Primera C
+      Country: N/A (ID: N/A)
+      Tier: 6 | League: 1 | Cup: 0 | Active: 0
+
+[ 152] ID:    235 | Primera D
+      Country: N/A (ID: N/A)
+      Tier: 7 | League: 1 | Cup: 0 | Active: 0
+
+[ 153] ID:    236 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 154] ID:    237 | Torneos de Verano
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 155] ID:    238 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 156] ID:    239 | 1st League
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 157] ID:     24 | Serie A
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 158] ID:    240 | Asian Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 159] ID:    241 | Asian Cup Qualification
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 160] ID:    242 | AFC Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 161] ID:    243 | AFC Champions League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 0 | Cup: 1 | Active: 1
+
+[ 162] ID:    244 | Champions League
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 163] ID:    245 | Europa League
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 164] ID:    246 | AFF Suzuki Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 165] ID:    247 | SAFF Championship
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 166] ID:    248 | Southeast Asian Games
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 0
+
+[ 167] ID:    249 | National Premier leagues
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 1 | Cup: 0 | Active: 0
+
+[ 168] ID:     25 | Primera Division
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 169] ID:    250 | New South Wales
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 170] ID:    251 | Victorian
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 0 | Cup: 1 | Active: 1
+
+[ 171] ID:    252 | Premiere League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 172] ID:    253 | Serie C
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 1
+
+[ 173] ID:    254 | Serie D
+      Country: N/A (ID: N/A)
+      Tier: 4 | League: 1 | Cup: 0 | Active: 0
+
+[ 174] ID:    255 | Paulista A1
+      Country: N/A (ID: N/A)
+      Tier: 5 | League: 1 | Cup: 0 | Active: 1
+
+[ 175] ID:    256 | Copa Do Brasil
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 176] ID:    257 | Canadian Championship
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 177] ID:    258 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 178] ID:    259 | Primera B
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 179] ID:     26 | Super League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 180] ID:    260 | Copa Chile
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 181] ID:    261 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 182] ID:    262 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 183] ID:    263 | League 1
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 184] ID:    264 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 185] ID:    265 | Primera B
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 186] ID:    266 | Gold Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 187] ID:    267 | CONCACAF League
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 188] ID:    268 | Champions League
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 189] ID:    269 | CONCACAF Nations League Qualification
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 190] ID:     27 | GO-JEK Liga 1
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 191] ID:    270 | FIFA Confederations Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 0
+
+[ 192] ID:    271 | Copa America
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 193] ID:    272 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 194] ID:    273 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 195] ID:    274 | UEFA EURO Qualification
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 196] ID:    275 | National Football League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 197] ID:    276 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 198] ID:    277 | Primera Division
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 199] ID:    278 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 200] ID:    279 | I-League
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 201] ID:     28 | J. League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 202] ID:    280 | Hazfi Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 203] ID:    281 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 204] ID:    282 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 205] ID:    283 | J. League 2
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 206] ID:    284 | League Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 207] ID:    285 | Emperor Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 208] ID:    286 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 209] ID:    287 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 210] ID:    288 | Division 1
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 211] ID:    289 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 212] ID:     29 | Sg. Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 213] ID:    290 | Super League
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 214] ID:    291 | GOTV Shield Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 215] ID:    292 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 216] ID:    293 | Super League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 217] ID:    294 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 218] ID:    295 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 219] ID:    296 | Supercopa MX
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 220] ID:    297 | Regional Leagues
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 0
+
+[ 221] ID:    298 | Mainland Premier League
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 0
+
+[ 222] ID:    299 | Primera Division
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 223] ID:      3 | LaLiga Santander
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 224] ID:     30 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 225] ID:    300 | Champions League
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 226] ID:    301 | Professional League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 227] ID:    302 | PFF Premiere League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 228] ID:    303 | West Bank Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 0
+
+[ 229] ID:    304 | LPF
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 230] ID:    305 | Qatar Stars League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 231] ID:    306 | 2nd Division
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 232] ID:    307 | Stars League Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 233] ID:    308 | K-League 2
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 234] ID:    309 | Football National League
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 235] ID:     31 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 236] ID:    310 | National Football League 2
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 1
+
+[ 237] ID:    311 | Russian Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 238] ID:    312 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 239] ID:    313 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 240] ID:    314 | Division 1
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 241] ID:    315 | King's Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 242] ID:    316 | Challenge Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 243] ID:    317 | Championship
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 244] ID:    318 | League 1
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 1
+
+[ 245] ID:    319 | League 2
+      Country: N/A (ID: N/A)
+      Tier: 4 | League: 1 | Cup: 0 | Active: 1
+
+[ 246] ID:     32 | Erovnuli Liga
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 247] ID:    320 | League Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 248] ID:    321 | Prva Liga
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 249] ID:    322 | League Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 0
+
+[ 250] ID:    323 | Singapore Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 251] ID:    324 | 2nd League
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 252] ID:    325 | 2nd SNL
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 253] ID:    326 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 254] ID:    327 | 1st Division
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 255] ID:    328 | Super Cup MTN8
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 256] ID:    329 | Copa Libertadores
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 0 | Cup: 1 | Active: 1
+
+[ 257] ID:     33 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 258] ID:    330 | Copa Sudamericana
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 259] ID:    331 | Recopa Sudamericana
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 260] ID:    332 | Segunda B
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 1
+
+[ 261] ID:    333 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 262] ID:    334 | Copa del Rey
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 263] ID:    335 | Svenska Cupen
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 264] ID:    336 | Superettan
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 265] ID:    337 | Division 1
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 1
+
+[ 266] ID:    338 | Challenge League
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 267] ID:    339 | 1. Liga Promotion
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 1
+
+[ 268] ID:     34 | Pro League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 269] ID:    340 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 270] ID:    341 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 271] ID:    342 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 272] ID:    343 | Ligue 2
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 273] ID:    344 | 1st Lig
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 274] ID:    345 | 2nd Lig
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 1
+
+[ 275] ID:    346 | 3rd Lig
+      Country: N/A (ID: N/A)
+      Tier: 4 | League: 1 | Cup: 0 | Active: 0
+
+[ 276] ID:    347 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 277] ID:    348 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 278] ID:    349 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 279] ID:     35 | Ligue 1
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 280] ID:    350 | UEFA Nations League
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 281] ID:    351 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 282] ID:    352 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 283] ID:    353 | Persha Liga
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 284] ID:    354 | UAE Pro League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 285] ID:    355 | Division 1
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 286] ID:    356 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 287] ID:    357 | League Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 288] ID:    358 | World Cup AFC Qualifiers
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 289] ID:    359 | World Cup CAF Qualifiers
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 290] ID:     36 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 291] ID:    360 | World Cup CONCACAF Qualifiers
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 292] ID:    361 | World Cup CONMEBOL Qualifiers
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 293] ID:    362 | FIFA World Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 294] ID:    363 | World Cup UEFA Qualifiers
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 295] ID:    364 | World Cup OFC Qualifiers
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 296] ID:    365 | World Cup Inter-Confederation Play-Off
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 297] ID:    366 | Arab Club Champions Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 298] ID:    367 | Atlantic Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 299] ID:    368 | Audi Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 300] ID:    369 | Champions Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 0 | Active: 1
+
+[ 301] ID:     37 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 302] ID:    370 | Club Teams Friendlies
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 303] ID:    371 | National Teams Friendlies
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 304] ID:    372 | FIFA Club World Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 305] ID:    373 | King's Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 0
+
+[ 306] ID:    374 | Kirin Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 0
+
+[ 307] ID:    375 | Premier League Asia Trophy
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 0
+
+[ 308] ID:    376 | Suruga Bank Championship
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 0
+
+[ 309] ID:    377 | Toulon
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 0 | Active: 0
+
+[ 310] ID:    378 | Uhren Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 0
+
+[ 311] ID:    379 | Copa Venezuela
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 312] ID:     38 | Botola Pro
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 313] ID:    380 | V-League 2
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 314] ID:    381 | League Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 315] ID:    382 | NASL
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 1 | Cup: 0 | Active: 0
+
+[ 316] ID:    383 | USL Championship
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 317] ID:    384 | USL League One
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 1
+
+[ 318] ID:    385 | Olympic Games Football Tournament
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 319] ID:    386 | Kagame Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 0
+
+[ 320] ID:    387 | UEFA EURO
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 321] ID:    388 | Copa Paraguay
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 322] ID:    389 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 323] ID:     39 | V-League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 324] ID:    390 | PFL
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 325] ID:    391 | CONCACAF Nations League
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 326] ID:    392 | Liga III
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 0
+
+[ 327] ID:    393 | Copa Ecuador
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 328] ID:    394 | Challenge Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 329] ID:    395 | 3. Division
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 0
+
+[ 330] ID:    396 | J. League 3
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 1
+
+[ 331] ID:    397 | Segunda Division
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 332] ID:    398 | Liga Pro Serie B
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 333] ID:    399 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 334] ID:      4 | Serie A
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 335] ID:     40 | Superliga
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 336] ID:    400 | Nacional B
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 0
+
+[ 337] ID:    401 | Segunda Division
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 338] ID:    402 | Copa Premier Centroamericana
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 0
+
+[ 339] ID:    403 | African Nations Championship Qualification
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 340] ID:    404 | Azadegan League
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 341] ID:    405 | Sultan Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 342] ID:    406 | Segunda Division
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 343] ID:    407 | Copa Bicentenario
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 344] ID:    408 | Super League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 345] ID:    409 | Malaysia League Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 0
+
+[ 346] ID:     41 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 347] ID:    410 | Sapling Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 348] ID:    411 | League Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 349] ID:    412 | Arabian Gulf Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 350] ID:    413 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 351] ID:    414 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 352] ID:    415 | Premiership
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 353] ID:    416 | Copa Paulino Alcantara
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 0
+
+[ 354] ID:    417 | Elite ONE
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 355] ID:    418 | King's Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 356] ID:    419 | Morocco Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 357] ID:     42 | Ligue I
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 358] ID:    420 | Senior Shield
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 359] ID:    421 | Presidents Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 360] ID:    422 | Pernambucano A1
+      Country: N/A (ID: N/A)
+      Tier: 5 | League: 1 | Cup: 0 | Active: 1
+
+[ 361] ID:    423 | Carioca
+      Country: N/A (ID: N/A)
+      Tier: 5 | League: 1 | Cup: 0 | Active: 1
+
+[ 362] ID:    424 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 363] ID:    425 | Mineiro 1
+      Country: N/A (ID: N/A)
+      Tier: 5 | League: 1 | Cup: 0 | Active: 1
+
+[ 364] ID:    426 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 365] ID:    427 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 366] ID:    428 | League Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 367] ID:    429 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 368] ID:     43 | Bundesliga
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 369] ID:    430 | Gaucho
+      Country: N/A (ID: N/A)
+      Tier: 5 | League: 1 | Cup: 0 | Active: 1
+
+[ 370] ID:    431 | Paraibano
+      Country: N/A (ID: N/A)
+      Tier: 5 | League: 1 | Cup: 0 | Active: 1
+
+[ 371] ID:    432 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 372] ID:    433 | FA Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 373] ID:    434 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 374] ID:    435 | Gold Cup Qualifiers
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 375] ID:    436 | Supercopa
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 376] ID:    437 | Tipsport Winter League
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 377] ID:    438 | Goiano
+      Country: N/A (ID: N/A)
+      Tier: 5 | League: 1 | Cup: 0 | Active: 1
+
+[ 378] ID:    439 | Potiguar
+      Country: N/A (ID: N/A)
+      Tier: 5 | League: 1 | Cup: 0 | Active: 1
+
+[ 379] ID:     44 | 1st Division
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 380] ID:    440 | Baiano
+      Country: N/A (ID: N/A)
+      Tier: 5 | League: 1 | Cup: 0 | Active: 1
+
+[ 381] ID:    441 | Cearense
+      Country: N/A (ID: N/A)
+      Tier: 5 | League: 1 | Cup: 0 | Active: 1
+
+[ 382] ID:    442 | Maranhense
+      Country: N/A (ID: N/A)
+      Tier: 5 | League: 1 | Cup: 0 | Active: 1
+
+[ 383] ID:    443 | Sergipano
+      Country: N/A (ID: N/A)
+      Tier: 5 | League: 1 | Cup: 0 | Active: 1
+
+[ 384] ID:    444 | Paranaense
+      Country: N/A (ID: N/A)
+      Tier: 5 | League: 1 | Cup: 0 | Active: 1
+
+[ 385] ID:    445 | Welsh Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 386] ID:    446 | UEFA Conference League
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 0 | Cup: 1 | Active: 1
+
+[ 387] ID:    447 | Tweede Divisie
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 1
+
+[ 388] ID:    448 | Canadian Soccer League
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 389] ID:    449 | Garibola
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 390] ID:     45 | Liga MX
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 391] ID:    450 | K3 League
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 1
+
+[ 392] ID:    451 | Liga 3
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 1
+
+[ 393] ID:    452 | Arab Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 394] ID:    453 | League Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 395] ID:    454 | League Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 396] ID:    455 | Champions League
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 397] ID:    456 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 398] ID:    457 |  Northern New South Wales Premier League
+      Country: N/A (ID: N/A)
+      Tier: 5 | League: 1 | Cup: 0 | Active: 0
+
+[ 399] ID:    458 | 2nd Division
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 400] ID:    459 | Alagoano
+      Country: N/A (ID: N/A)
+      Tier: 5 | League: 1 | Cup: 0 | Active: 1
+
+[ 401] ID:     46 | Primera Division
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 402] ID:    460 | Piauiense
+      Country: N/A (ID: N/A)
+      Tier: 5 | League: 1 | Cup: 0 | Active: 1
+
+[ 403] ID:    461 | Copa do Nordeste
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 404] ID:    462 | Division Di Honor
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 405] ID:    463 | Brasiliense
+      Country: N/A (ID: N/A)
+      Tier: 5 | League: 1 | Cup: 0 | Active: 1
+
+[ 406] ID:    464 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 407] ID:    465 | Copa Uruguay
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 408] ID:    466 | National League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 409] ID:    467 | Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 0
+
+[ 410] ID:    468 | Regionalliga
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 0
+
+[ 411] ID:    469 | New South Wales Premier League 2
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 0
+
+[ 412] ID:     47 | Primera Division
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 413] ID:    470 | 2nd Division
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 0
+
+[ 414] ID:    471 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 0
+
+[ 415] ID:    472 | Acreano
+      Country: N/A (ID: N/A)
+      Tier: 5 | League: 1 | Cup: 0 | Active: 0
+
+[ 416] ID:    473 | Esiliiga
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 0
+
+[ 417] ID:    474 | AIFF Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 0
+
+[ 418] ID:    475 | Liga Premier
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 0
+
+[ 419] ID:    476 | Division 2
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 1
+
+[ 420] ID:    477 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 0
+
+[ 421] ID:    478 | Division 1
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 0
+
+[ 422] ID:    479 | Campionato di Calcio
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 0
+
+[ 423] ID:     48 | Primera Division
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 424] ID:    480 | Pro League
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 0
+
+[ 425] ID:    481 | Copa De La Division Profesional
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 426] ID:    482 | Premier Division
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 0
+
+[ 427] ID:    483 | First Amateur Division
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 0
+
+[ 428] ID:    484 | Championnat National
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 0
+
+[ 429] ID:    485 | Roraimense
+      Country: N/A (ID: N/A)
+      Tier: 5 | League: 1 | Cup: 0 | Active: 0
+
+[ 430] ID:    486 | Elite Two
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 0
+
+[ 431] ID:    487 | Non Premier League
+      Country: N/A (ID: N/A)
+      Tier: 7 | League: 1 | Cup: 0 | Active: 0
+
+[ 432] ID:    488 | Teine Liiga
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 0
+
+[ 433] ID:    489 | Srpska Liga
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 0
+
+[ 434] ID:     49 | Division Profesional
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 435] ID:    490 | Women's World Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 436] ID:    491 | CONCACAF Central American Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 437] ID:    492 | TT Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 438] ID:    493 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 439] ID:    494 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 440] ID:    495 | Toto Cup Ligat Al
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 441] ID:    496 | 1a Divisió
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 442] ID:    497 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 443] ID:    498 | Super League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 444] ID:    499 | Capixaba
+      Country: N/A (ID: N/A)
+      Tier: 5 | League: 1 | Cup: 0 | Active: 1
+
+[ 445] ID:      5 | Ligue 1
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 446] ID:     50 | Liga Pro
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 447] ID:    500 | Premier League Summer Series
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 1 | Cup: 0 | Active: 1
+
+[ 448] ID:    501 | Northern Territory Premier League
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 449] ID:    502 | Copa Santa Fe
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 450] ID:    503 | Super Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 451] ID:    504 | Queensland NPL
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 452] ID:    505 | CAFA Nations Cup
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 453] ID:    506 | Capital Territory NPL
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 454] ID:    507 | Western Australia NPL
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 455] ID:    508 | Copa Santa Catarina
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 456] ID:    509 | AGCFF Gulf Club Champions League
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 457] ID:     51 | Primera A
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 458] ID:    510 | Division 1
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 459] ID:    511 | 1. Division
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 0
+
+[ 460] ID:    512 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 461] ID:    513 | Division One
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 462] ID:    514 | Copa Gaúcha
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 463] ID:    515 | Australian Championship
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 464] ID:    516 | Copa Fares Lopes
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
+[ 465] ID:     52 | Primera Division
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 466] ID:     53 | Primera División
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 467] ID:     54 | Primera Division
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 468] ID:     55 | Liga Nacional
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 469] ID:     56 | Liga Nacional
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 470] ID:     57 | Veikkausliiga
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 471] ID:     58 | A Lyga
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 472] ID:     59 | National Division
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 473] ID:      6 | Super Lig
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 474] ID:     60 | Ekstraklasa
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 475] ID:     61 | Liga I
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 476] ID:     62 | Super Liga
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 477] ID:     63 | Super League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 478] ID:     64 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 479] ID:     65 | Indian Super League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 480] ID:     66 | K-League 1
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 481] ID:     67 | Hyundai A-League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 482] ID:     68 | First Division A
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 483] ID:     69 | Premiership
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 484] ID:      7 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 485] ID:     70 | Premijer Liga
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 486] ID:     71 | First Professional League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 487] ID:     72 | 1st League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 488] ID:     73 | Ligat HaAl
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 489] ID:     74 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 0
+
+[ 490] ID:     75 | Premiership
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 491] ID:     76 | Major League Soccer
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 492] ID:     77 | Championship
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 493] ID:     78 | NPFL
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 494] ID:     79 | Segunda Division
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 495] ID:      8 | Primeira Liga
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 496] ID:     80 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 497] ID:     81 | Super League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 498] ID:     82 | League 1
+      Country: N/A (ID: N/A)
+      Tier: 3 | League: 1 | Cup: 0 | Active: 1
+
+[ 499] ID:     83 | League 2
+      Country: N/A (ID: N/A)
+      Tier: 4 | League: 1 | Cup: 0 | Active: 1
+
+[ 500] ID:     84 | Ligue 1
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 501] ID:     85 | Premier Soccer League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 502] ID:     86 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 503] ID:     87 | Serie B
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 504] ID:     88 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 505] ID:     89 | Championnat National
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 506] ID:      9 | Super League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 507] ID:     90 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 1 | Cup: 0 | Active: 0
+
+[ 508] ID:     91 | Premier League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 509] ID:     92 | Segunda Liga
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 510] ID:     93 | 2nd Bundesliga
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 511] ID:     94 | Super League
+      Country: N/A (ID: N/A)
+      Tier: 1 | League: 1 | Cup: 0 | Active: 1
+
+[ 512] ID:     95 | Serie B
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 513] ID:     96 | Primera Nacional
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 514] ID:     97 | Ligue 2
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 515] ID:     98 | Liga de Expansión MX
+      Country: N/A (ID: N/A)
+      Tier: 2 | League: 1 | Cup: 0 | Active: 1
+
+[ 516] ID:     99 | Beker Van Belgie
+      Country: N/A (ID: N/A)
+      Tier: 0 | League: 0 | Cup: 1 | Active: 1
+
