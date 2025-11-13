@@ -25,6 +25,19 @@ class ExcelWriter:
         self.excel_path.parent.mkdir(parents=True, exist_ok=True)
         logger.info(f"Excel writer initialized: {excel_path}")
     
+    def write_bet_record(self, bet_record):
+        """
+        Write a bet record to Excel (alias for append_bet_record)
+        Converts BetRecord object to dictionary if needed
+        
+        Args:
+            bet_record: BetRecord object or dictionary
+        """
+        # Convert BetRecord to dict if needed
+        if hasattr(bet_record, 'to_dict'):
+            bet_record = bet_record.to_dict()
+        self.append_bet_record(bet_record)
+    
     def append_bet_record(self, bet_record: Dict[str, Any]):
         """
         Append a bet record to Excel file

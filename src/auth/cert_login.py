@@ -49,10 +49,7 @@ class BetfairAuthenticator:
             Tuple of (success: bool, error_message: Optional[str])
             On success, self.session_token will be set
         """
-        logger.info(f"Attempting login to Betfair Italy Exchange...")
-        logger.debug(f"Login endpoint: {self.login_endpoint}")
-        logger.debug(f"Username: {self.username}")
-        logger.debug(f"Certificate: {self.cert_path}")
+        # Login details are logged only when needed (errors, success)
         
         try:
             # Prepare headers
@@ -88,8 +85,9 @@ class BetfairAuthenticator:
                     return True, None
                 else:
                     error_status = result.get('loginStatus', 'UNKNOWN_ERROR')
-                    error_msg = f"Login failed: {error_status}"
-                    logger.error(error_msg)
+                    # Don't log "Login failed" here - let main.py handle the logging
+                    # Only log the error status for debugging
+                    logger.debug(f"Login response status: {error_status}")
                     return False, error_status
             else:
                 error_msg = f"HTTP {response.status_code}: {response.text}"

@@ -2,10 +2,12 @@
 Qualification Logic Module
 Determines if a match qualifies for betting based on goals in 60-74 minute window
 Handles VAR (cancelled goals) and 0-0 exception
-Also handles early discard if match is out of target at minute 60
+Also handles early discard if match is out of target at minute 60 (based on Excel targets)
 """
 import logging
+import pandas as pd
 from typing import List, Dict, Any, Tuple, Set, Optional
+from config.competition_mapper import normalize_text
 
 logger = logging.getLogger("BetfairBot")
 
@@ -90,18 +92,100 @@ def check_zero_zero_exception(score: str, current_minute: int,
         return False, "0-0 but competition not in exception list"
 
 
-def is_out_of_target(score: str, current_minute: int, target_over: float) -> Tuple[bool, str]:
+def get_excel_targets_for_competition(competition_name: str, excel_path: str) -> Set[str]:
+    """
+    Get all Result (score) targets from Excel for a specific competition
+    
+    Args:
+        competition_name: Competition name (will be normalized for matching)
+        excel_path: Path to Excel file
+    
+    Returns:
+        Set of Result values (scores) available for this competition, empty set if not found
+    """
+    try:
+        df = pd.read_excel(excel_path)
+        
+        if 'Competition' not in df.columns or 'Result' not in df.columns:
+            logger.warning(f"Required columns not found in Excel file")
+            return set()
+        
+        # Normalize competition name for matching
+        normalized_competition = normalize_text(competition_name)
+        
+        # Find matching rows
+        matches = df[
+            (df['Competition'].astype(str).str.strip() == competition_name) |
+            (df['Competition'].astype(str).str.strip().apply(lambda x: normalize_text(x) == normalized_competition))
+        ]
+        
+        if matches.empty:
+            logger.debug(f"No competition match found for: {competition_name} (normalized: {normalized_competition})")
+            return set()
+        
+        # Get unique Result values
+        results = matches['Result'].astype(str).str.strip().unique().tolist()
+        return set(results)
+        
+    except FileNotFoundError:
+        logger.warning(f"Excel file not found: {excel_path}")
+        return set()
+    except Exception as e:
+        logger.error(f"Error reading Excel targets: {str(e)}")
+        return set()
+
+
+def get_possible_scores_after_one_goal(current_score: str) -> Set[str]:
+    """
+    Get all possible scores after one more goal is scored
+    
+    Args:
+        current_score: Current score (e.g., "1-1", "0-0", "2-1")
+    
+    Returns:
+        Set of possible scores after one goal (e.g., {"2-1", "1-2"} for "1-1")
+    """
+    try:
+        parts = current_score.split("-")
+        if len(parts) != 2:
+            return set()
+        
+        home_goals = int(parts[0].strip())
+        away_goals = int(parts[1].strip())
+        
+        # One goal can be scored by home team or away team
+        possible_scores = {
+            f"{home_goals + 1}-{away_goals}",  # Home team scores
+            f"{home_goals}-{away_goals + 1}"   # Away team scores
+        }
+        
+        return possible_scores
+        
+    except (ValueError, IndexError) as e:
+        logger.warning(f"Error parsing score '{current_score}': {str(e)}")
+        return set()
+
+
+def is_out_of_target(score: str, current_minute: int, target_over: float,
+                    competition_name: Optional[str] = None,
+                    excel_path: Optional[str] = None) -> Tuple[bool, str]:
     """
     Check if match is out of target at minute 60
     
-    A match is out of target if:
-    1. Current total goals >= (target_over + 0.5) at minute 60
-    2. Current total goals = target_over at minute 60 (one goal in 60-74 would make it out of target)
+    Logic (per client requirements):
+    - If Excel targets are provided: Check if current score + 1 goal can create any score in Excel targets
+    - If not in Excel targets: Match is out of target and can be discarded early
+    
+    Fallback logic (if Excel not available):
+    - Current total goals >= (target_over + 0.5) at minute 60
+    - Current total goals = target_over at minute 60 (one goal would exceed target)
     
     Args:
         score: Current score (e.g., "2-1", "0-0")
         current_minute: Current match minute
         target_over: Target Over X.5 value (e.g., 2.5 for Over 2.5)
+        competition_name: Competition name (for Excel lookup)
+        excel_path: Path to Excel file (Competitions_Results_Odds_Stake.xlsx)
     
     Returns:
         (is_out_of_target, reason)
@@ -119,6 +203,28 @@ def is_out_of_target(score: str, current_minute: int, target_over: float) -> Tup
         away_goals = int(parts[1].strip())
         total_goals = home_goals + away_goals
         
+        # If Excel path and competition name provided, use Excel-based check
+        if excel_path and competition_name:
+            excel_targets = get_excel_targets_for_competition(competition_name, excel_path)
+            
+            if excel_targets:
+                # Get possible scores after one goal
+                possible_scores = get_possible_scores_after_one_goal(score)
+                
+                # Check if any possible score is in Excel targets
+                matching_scores = possible_scores & excel_targets
+                
+                if not matching_scores:
+                    # None of the possible scores are in Excel targets → out of target
+                    return True, f"Score {score} at minute 60: possible scores after 1 goal {possible_scores} are not in Excel targets {excel_targets} for {competition_name}"
+                else:
+                    # At least one possible score is in Excel targets → still in target
+                    return False, f"Score {score} at minute 60: at least one possible score {matching_scores} is in Excel targets"
+            else:
+                # Excel file not found or competition not found → fallback to old logic
+                logger.debug(f"Excel targets not available for {competition_name}, using fallback logic")
+        
+        # Fallback logic: Check based on target_over only
         # Check if already out of target (total goals >= target + 0.5)
         # For Over 2.5: if total >= 3, already out of target
         if total_goals >= int(target_over) + 1:
@@ -145,7 +251,8 @@ def is_qualified(score: str,
                 zero_zero_exception_competitions: Set[str],
                 var_check_enabled: bool = True,
                 target_over: Optional[float] = None,
-                early_discard_enabled: bool = True) -> Tuple[bool, str]:
+                early_discard_enabled: bool = True,
+                excel_path: Optional[str] = None) -> Tuple[bool, str]:
     """
     Check if match is qualified for betting
     
@@ -158,13 +265,17 @@ def is_qualified(score: str,
         competition_name: Competition name
         zero_zero_exception_competitions: Set of competitions with 0-0 exception
         var_check_enabled: Whether to filter cancelled goals
+        target_over: Target Over X.5 value (e.g., 2.5)
+        early_discard_enabled: Whether to enable early discard at minute 60
+        excel_path: Path to Excel file (for early discard check based on Excel targets)
     
     Returns:
         (is_qualified, reason)
     """
     # Early discard check: if at minute 60 and out of target, immediately disqualify
     if early_discard_enabled and target_over is not None and current_minute == 60:
-        out_of_target, reason = is_out_of_target(score, current_minute, target_over)
+        out_of_target, reason = is_out_of_target(score, current_minute, target_over, 
+                                                competition_name, excel_path)
         if out_of_target:
             logger.info(f"Match out of target at minute 60: {reason}")
             return False, f"Out of target: {reason}"

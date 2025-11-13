@@ -22,11 +22,41 @@ from football_api.live_score_client import LiveScoreClient
 from football_api.parser import parse_match_score, parse_match_minute, parse_goals_timeline, parse_match_teams, parse_match_competition
 from football_api.matcher import MatchMatcher
 from logic.match_tracker import MatchTrackerManager, MatchTracker, MatchState
+from logic.bet_executor import execute_lay_bet
 from tracking.bet_tracker import BetTracker
 from tracking.excel_writer import ExcelWriter
+from tracking.skipped_matches_writer import SkippedMatchesWriter
+from betfair.betting_service import BettingService
 import logging
+from datetime import datetime
 
 logger = logging.getLogger("BetfairBot")
+
+
+def format_boxed_message(message: str) -> str:
+    """
+    Format a message with a box border
+    
+    Args:
+        message: Message to display in box
+    
+    Returns:
+        Formatted string with box border
+    """
+    # Calculate box width (minimum 60, or message length + 4 for padding)
+    width = max(60, len(message) + 4)
+    
+    # Create box
+    top_border = "┌" + "─" * (width - 2) + "┐"
+    bottom_border = "└" + "─" * (width - 2) + "┘"
+    
+    # Center message in box
+    padding = (width - len(message) - 2) // 2
+    left_padding = " " * padding
+    right_padding = " " * (width - len(message) - 2 - padding)
+    content = f"│{left_padding}{message}{right_padding}│"
+    
+    return f"{top_border}\n{content}\n{bottom_border}"
 
 
 def determine_bet_outcome(final_score: str, selection: str, target_over: Optional[float] = None) -> str:
@@ -177,23 +207,100 @@ def main():
         )
         print("✓ Authenticator initialized")
         
-        # Perform login
+        # Perform login with retry logic
         print("\n[4/6] Logging in to Betfair Italy Exchange...")
-        success, error = authenticator.login()
+        retry_delay = config.get("session", {}).get("retry_delay_seconds", 10)
+        max_login_attempts = 999999  # Infinite retry
+        login_attempt = 0
+        session_token = None
         
-        if not success:
-            logger.error(f"Login failed: {error}")
-            print(f"✗ Login failed: {error}")
-            print("\nPlease check:")
-            print("  - Certificate files exist and are correct")
-            print("  - Username and password are correct")
-            print("  - App Key is valid")
-            print("  - Certificate is uploaded to your Betfair account")
+        while login_attempt < max_login_attempts:
+            try:
+                login_attempt += 1
+                
+                success, error = authenticator.login()
+                
+                if success:
+                    session_token = authenticator.get_session_token()
+                    logger.info("Login successful - proceeding to market detection")
+                    print("✓ Login successful!")
+                    break
+                else:
+                    # Check if it's a maintenance/regulator error
+                    is_maintenance_error = "UNAVAILABLE_CONNECTIVITY_TO_REGULATOR_IT" in str(error)
+                    
+                    # Check if it's a connectivity/regulator error (should retry)
+                    is_retryable_error = is_maintenance_error or any(keyword in str(error) for keyword in [
+                        "UNAVAILABLE_CONNECTIVITY",
+                        "CONNECTION",
+                        "TIMEOUT",
+                        "NETWORK"
+                    ])
+                    
+                    # Only show retry message on first attempt and every 10 attempts (1, 11, 21, 31...)
+                    should_show_retry = (login_attempt == 1) or (login_attempt % 10 == 1)
+                    
+                    if is_maintenance_error:
+                        # Maintenance error - show maintenance message only once
+                        if login_attempt == 1:
+                            print(f"⚠ Betfair Italy Exchange is under maintenance. Check status: https://www.betfair.it")
+                            logger.warning(f"Betfair maintenance detected: {error}")
+                            logger.info("Check service status at: https://www.betfair.it")
+                        
+                        # Only show retry message on first attempt and every 10 attempts
+                        if should_show_retry:
+                            print(f"   Retrying in {retry_delay} seconds... (attempt {login_attempt})")
+                        
+                        try:
+                            time.sleep(retry_delay)
+                        except KeyboardInterrupt:
+                            logger.info("Interrupted by user during login retry")
+                            print("\n\nStopping...")
+                            return 1
+                    elif is_retryable_error:
+                        # Other retryable errors - only show on first attempt
+                        if login_attempt == 1:
+                            print(f"⚠ Login failed: {error}")
+                        
+                        # Only show retry message on first attempt and every 10 attempts
+                        if should_show_retry:
+                            print(f"   Retrying in {retry_delay} seconds... (attempt {login_attempt})")
+                        
+                        try:
+                            time.sleep(retry_delay)
+                        except KeyboardInterrupt:
+                            logger.info("Interrupted by user during login retry")
+                            print("\n\nStopping...")
+                            return 1
+                    else:
+                        # Non-retryable error (e.g., invalid credentials, contract acceptance)
+                        # Only log to file for retry attempts, print to console only on first attempt
+                        if login_attempt == 1:
+                            logger.error(f"Login failed: {error}")
+                            print(f"✗ Login failed: {error}")
+                            print(f"\nPlease check: https://www.betfair.it/ app_key, Username, password.")
+                        # For subsequent attempts, already logged above with logger.debug()
+                        
+                        # Only show retry message on first attempt and every 10 attempts
+                        if should_show_retry:
+                            print(f"\nRetrying in {retry_delay} seconds... (attempt {login_attempt}) (Press Ctrl+C to stop)")
+                        
+                        try:
+                            time.sleep(retry_delay)
+                        except KeyboardInterrupt:
+                            logger.info("Interrupted by user during login retry")
+                            print("\n\nStopping...")
+                            return 1
+            except KeyboardInterrupt:
+                # Handle Ctrl+C even when it happens during HTTP request
+                logger.info("Interrupted by user during login attempt")
+                print("\n\nStopping...")
+                return 1
+        
+        if not session_token:
+            logger.error("Failed to obtain session token after all retry attempts")
+            print("✗ Failed to login after multiple attempts")
             return 1
-        
-        session_token = authenticator.get_session_token()
-        logger.info("Login successful - proceeding to market detection")
-        print("✓ Login successful!")
         
         # Initialize market service first (needed for callback)
         print("\n[Market Detection] Initializing market service...")
@@ -223,6 +330,9 @@ def main():
                     new_token = authenticator.get_session_token()
                     market_service.update_session_token(new_token)
                     keep_alive_manager.update_session_token(new_token)
+                    # Update betting service if it exists (Milestone 3)
+                    if betting_service:
+                        betting_service.update_session_token(new_token)
                     logger.info("Re-login successful after keep-alive detected expiry")
                 else:
                     logger.warning(f"Re-login failed after keep-alive expiry: {error}")
@@ -295,6 +405,7 @@ def main():
         # Initialize Bet Tracking (Phase 5)
         bet_tracker = None
         excel_writer = None
+        skipped_matches_writer = None
         bet_tracking_config = config.get("bet_tracking", {})
         if bet_tracking_config.get("track_outcomes", True):
             excel_path = bet_tracking_config.get("excel_path", "competitions/Competitions_Results_Odds_Stake.xlsx")
@@ -305,6 +416,28 @@ def main():
             excel_writer = ExcelWriter(str(excel_path_full))
             logger.info("Bet tracking initialized")
             print("✓ Bet tracking initialized")
+        
+        # Initialize Skipped Matches Writer
+        project_root = Path(__file__).parent.parent
+        skipped_matches_path = project_root / "competitions" / "Skipped Matches.xlsx"
+        skipped_matches_writer = SkippedMatchesWriter(str(skipped_matches_path))
+        logger.info("Skipped matches writer initialized")
+        print("✓ Skipped matches writer initialized")
+        
+        # Initialize Betting Service (Milestone 3)
+        betting_service = None
+        bet_execution_config = config.get("bet_execution", {})
+        if bet_execution_config:
+            betfair_config = config.get("betfair", {})
+            betting_service = BettingService(
+                app_key=betfair_config.get("app_key", ""),
+                session_token=session_token,
+                api_endpoint=betfair_config.get("api_endpoint", "")
+            )
+            # Note: Token will be updated automatically when session expires and re-login happens
+            # via handle_session_expired callback (line 219-235)
+            logger.info("Betting service initialized")
+            print("✓ Betting service initialized (Milestone 3)")
         
         # Market Detection
         print("\n" + "=" * 60)
@@ -532,7 +665,12 @@ def main():
                                     
                                     old_state = tracker.state
                                     tracker.update_match_data(score, minute, goals)
-                                    tracker.update_state()
+                                    
+                                    # Get Excel path for early discard check
+                                    project_root = Path(__file__).parent.parent
+                                    excel_path = project_root / "competitions" / "Competitions_Results_Odds_Stake.xlsx"
+                                    
+                                    tracker.update_state(excel_path=str(excel_path) if excel_path.exists() else None)
                                     
                                     # Log status changes
                                     if tracker.state == MatchState.QUALIFIED and old_state != MatchState.QUALIFIED:
@@ -541,6 +679,97 @@ def main():
                                     elif tracker.state == MatchState.READY_FOR_BET and old_state != MatchState.READY_FOR_BET:
                                         logger.info(f"Match READY FOR BET: {tracker.betfair_event_name}")
                                         print(f"  🎯 READY FOR BET: {tracker.betfair_event_name}")
+                                    
+                                    # Milestone 3: Execute lay bet if conditions are met
+                                    # Check both when state changes to READY_FOR_BET and on subsequent updates
+                                    if (tracker.state == MatchState.READY_FOR_BET and 
+                                        betting_service and 
+                                        tracker.current_minute >= 75 and 
+                                        not tracker.bet_placed):
+                                        match_tracking_config = config.get("match_tracking", {})
+                                        target_over = match_tracking_config.get("target_over", 2.5)
+                                        
+                                        logger.info(f"Attempting to place lay bet for {tracker.betfair_event_name} (minute {tracker.current_minute}, score: {tracker.current_score})")
+                                        
+                                        # Get Excel path
+                                        project_root = Path(__file__).parent.parent
+                                        excel_path = project_root / "competitions" / "Competitions_Results_Odds_Stake.xlsx"
+                                        
+                                        bet_result = execute_lay_bet(
+                                            market_service=market_service,
+                                            betting_service=betting_service,
+                                            event_id=tracker.betfair_event_id,
+                                            event_name=tracker.betfair_event_name,
+                                            target_over=target_over,
+                                            bet_config=bet_execution_config,
+                                            competition_name=tracker.competition_name,
+                                            current_score=tracker.current_score,
+                                            excel_path=str(excel_path)
+                                        )
+                                        
+                                        if bet_result and bet_result.get("success"):
+                                            # Mark bet as placed
+                                            tracker.bet_placed = True
+                                            tracker.bet_id = bet_result.get("betId", "")
+                                            
+                                            # Record bet in BetTracker
+                                            if bet_tracker:
+                                                bet_record = bet_tracker.record_bet(
+                                                    bet_id=bet_result.get("betId", ""),
+                                                    match_id=tracker.betfair_event_id,
+                                                    competition=tracker.competition_name,
+                                                    market_name=bet_result.get("marketName", ""),
+                                                    selection=bet_result.get("runnerName", ""),
+                                                    odds=bet_result.get("layPrice", 0.0),
+                                                    stake=bet_result.get("stake", 0.0)
+                                                )
+                                                
+                                                # Write to Excel if enabled
+                                                if excel_writer:
+                                                    excel_writer.write_bet_record(bet_record)
+                                            
+                                            # Console output
+                                            print(f"  ✅ BET PLACED: {tracker.betfair_event_name}")
+                                            print(f"     Market: {bet_result.get('marketName', 'N/A')}")
+                                            print(f"     Lay @ {bet_result.get('layPrice', 0.0)}, Stake: {bet_result.get('stake', 0.0)} EUR, Liability: {bet_result.get('liability', 0.0)} EUR")
+                                            print(f"     BetId: {bet_result.get('betId', 'N/A')}")
+                                            
+                                            logger.info(f"Bet placed successfully: BetId={bet_result.get('betId')}, Stake={bet_result.get('stake')}, Liability={bet_result.get('liability')}")
+                                        else:
+                                            # Record skipped match
+                                            logger.warning(f"Failed to place bet for {tracker.betfair_event_name}")
+                                            print(f"  ⚠ Could not place bet for {tracker.betfair_event_name}")
+                                            
+                                            if skipped_matches_writer:
+                                                # Prepare skipped match data
+                                                skipped_data = {
+                                                    "match_name": tracker.betfair_event_name,
+                                                    "competition": tracker.competition_name,
+                                                    "minute": tracker.current_minute if tracker.current_minute >= 0 else "N/A",
+                                                    "status": tracker.state.value if hasattr(tracker.state, 'value') else str(tracker.state),
+                                                    "timestamp": datetime.now()
+                                                }
+                                                
+                                                # If bet_result is a dict with skip information, use it
+                                                if bet_result and isinstance(bet_result, dict):
+                                                    skipped_data["reason"] = bet_result.get("reason", bet_result.get("skip_reason", "Unknown reason"))
+                                                    skipped_data["best_back"] = bet_result.get("bestBackPrice")
+                                                    skipped_data["best_lay"] = bet_result.get("bestLayPrice")
+                                                    skipped_data["spread_ticks"] = bet_result.get("spread_ticks")
+                                                    skipped_data["current_odds"] = bet_result.get("bestLayPrice") or bet_result.get("calculatedLayPrice")
+                                                else:
+                                                    # bet_result is None or invalid
+                                                    skipped_data["reason"] = "Bet execution failed (no details available)"
+                                                    skipped_data["best_back"] = None
+                                                    skipped_data["best_lay"] = None
+                                                    skipped_data["spread_ticks"] = None
+                                                    skipped_data["current_odds"] = None
+                                                
+                                                try:
+                                                    skipped_matches_writer.write_skipped_match(skipped_data)
+                                                    logger.info(f"Skipped match recorded: {tracker.betfair_event_name} - {skipped_data['reason']}")
+                                                except Exception as e:
+                                                    logger.error(f"Error writing skipped match: {str(e)}")
                             else:
                                 # Try to match with Live API
                                 live_match = match_matcher.match_betfair_to_live_api(
@@ -599,7 +828,11 @@ def main():
                                         goals = parse_goals_timeline(live_match)
                                     
                                     tracker.update_match_data(score, minute, goals)
-                                    tracker.update_state()
+                                    # Get Excel path for early discard check
+                                    project_root = Path(__file__).parent.parent
+                                    excel_path = project_root / "competitions" / "Competitions_Results_Odds_Stake.xlsx"
+                                    
+                                    tracker.update_state(excel_path=str(excel_path) if excel_path.exists() else None)
                                     
                                     # Add to manager
                                     match_tracker_manager.add_tracker(tracker)
@@ -614,10 +847,16 @@ def main():
                         # Log matching summary
                         if total_events > 0:
                             if matched_count > 0:
-                                logger.info(f"Matching: {matched_count}/{total_events} event(s) matched and started tracking")
+                                # Show boxed message when matches are found
+                                message = f"Matching: {matched_count}/{total_events} event(s) matched and started tracking"
+                                boxed_message = format_boxed_message(message)
+                                logger.info(message)
+                                print(boxed_message)
                             elif live_matches:
+                                # No box for 0 matches, just regular log
                                 logger.info(f"Matching: 0/{total_events} event(s) matched (checking {len(live_matches)} live match(es))")
                             else:
+                                # No box for no live matches, just regular log
                                 logger.info(f"Matching: {total_events} Betfair event(s) found, but no live matches available")
                         
                         # Process finished matches (Phase 5: Bet Tracking)
@@ -697,6 +936,9 @@ def main():
                             new_token = authenticator.get_session_token()
                             market_service.update_session_token(new_token)
                             keep_alive_manager.update_session_token(new_token)
+                            # Update betting service if it exists (Milestone 3)
+                            if betting_service:
+                                betting_service.update_session_token(new_token)
                             logger.info("Re-login successful, continuing...")
                             print("✓ Reconnected successfully")
                             consecutive_errors = 0  # Reset on successful re-login
@@ -738,6 +980,9 @@ def main():
                             new_token = authenticator.get_session_token()
                             market_service.update_session_token(new_token)
                             keep_alive_manager.update_session_token(new_token)
+                            # Update betting service if it exists (Milestone 3)
+                            if betting_service:
+                                betting_service.update_session_token(new_token)
                             logger.info("Re-login successful after session expiry")
                             print("✓ Re-login successful")
                             consecutive_errors = 0

@@ -70,6 +70,10 @@ class MatchTracker:
         self.last_update = datetime.now()
         self.qualified_at: Optional[datetime] = None
         
+        # Bet placement tracking (Milestone 3)
+        self.bet_placed = False
+        self.bet_id: Optional[str] = None
+        
         logger.info(f"Match tracker created: {betfair_event_name} (Betfair ID: {betfair_event_id}, Live ID: {live_match_id})")
     
     def update_match_data(self, score: str, minute: int, goals: List[Dict[str, Any]]):
@@ -93,9 +97,12 @@ class MatchTracker:
             logger.info(f"Match {self.betfair_event_name}: {new_goal_count} new goal(s) detected (total: {current_goal_count})")
             self.last_goal_count = current_goal_count
     
-    def update_state(self):
+    def update_state(self, excel_path: Optional[str] = None):
         """
         Update match state based on current data
+        
+        Args:
+            excel_path: Path to Excel file (for early discard check based on Excel targets)
         """
         from logic.qualification import is_qualified
         
@@ -125,7 +132,8 @@ class MatchTracker:
                     zero_zero_exception_competitions=self.zero_zero_exception_competitions,
                     var_check_enabled=self.var_check_enabled,
                     target_over=self.target_over,
-                    early_discard_enabled=self.early_discard_enabled
+                    early_discard_enabled=self.early_discard_enabled,
+                    excel_path=excel_path
                 )
                 
                 # If out of target at minute 60, immediately disqualify
