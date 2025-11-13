@@ -27,6 +27,8 @@ from tracking.bet_tracker import BetTracker
 from tracking.excel_writer import ExcelWriter
 from tracking.skipped_matches_writer import SkippedMatchesWriter
 from betfair.betting_service import BettingService
+from notifications.sound_notifier import SoundNotifier
+from notifications.email_notifier import EmailNotifier
 import logging
 from datetime import datetime
 
@@ -207,12 +209,28 @@ def main():
         )
         print("✓ Authenticator initialized")
         
+        # Initialize Email Notifier (Milestone 4) - before login to detect login issues
+        email_notifier = None
+        notifications_config = config.get("notifications", {})
+        if notifications_config.get("email_enabled", False):
+            try:
+                email_notifier = EmailNotifier(notifications_config)
+                logger.info("Email notifier initialized")
+                print("✓ Email notifications enabled")
+            except Exception as e:
+                logger.warning(f"Failed to initialize email notifier: {str(e)}")
+                print("⚠ Email notifications disabled (initialization failed)")
+        
         # Perform login with retry logic
         print("\n[4/6] Logging in to Betfair Italy Exchange...")
         retry_delay = config.get("session", {}).get("retry_delay_seconds", 10)
         max_login_attempts = 999999  # Infinite retry
         login_attempt = 0
         session_token = None
+        # Email flags: Track if email already sent to avoid sending multiple times
+        # These flags persist for the entire bot session (even if re-login happens later)
+        email_sent_for_maintenance = False  # Track if email already sent for maintenance
+        email_sent_for_terms = False  # Track if email already sent for terms
         
         while login_attempt < max_login_attempts:
             try:
@@ -246,6 +264,16 @@ def main():
                             print(f"⚠ Betfair Italy Exchange is under maintenance. Check status: https://www.betfair.it")
                             logger.warning(f"Betfair maintenance detected: {error}")
                             logger.info("Check service status at: https://www.betfair.it")
+                            
+                            # Send email notification for maintenance (only once per bot session)
+                            # Check both conditions: first attempt AND email not sent yet
+                            if login_attempt == 1 and email_notifier and not email_sent_for_maintenance:
+                                try:
+                                    email_notifier.send_betfair_maintenance_alert(str(error))
+                                    email_sent_for_maintenance = True  # Set flag to prevent sending again
+                                    logger.info("Email alert sent for Betfair maintenance (will not send again this session)")
+                                except Exception as e:
+                                    logger.error(f"Failed to send maintenance email: {str(e)}")
                         
                         # Only show retry message on first attempt and every 10 attempts
                         if should_show_retry:
@@ -274,11 +302,28 @@ def main():
                             return 1
                     else:
                         # Non-retryable error (e.g., invalid credentials, contract acceptance)
+                        # Check if it's a terms/conditions error
+                        error_str = str(error).upper()
+                        is_terms_error = any(keyword in error_str for keyword in [
+                            "TERMS", "CONDITIONS", "ACCEPT", "CONFIRMATION", "CONTRACT",
+                            "AGREEMENT", "ACCEPTANCE", "REQUIRED"
+                        ])
+                        
                         # Only log to file for retry attempts, print to console only on first attempt
                         if login_attempt == 1:
                             logger.error(f"Login failed: {error}")
                             print(f"✗ Login failed: {error}")
                             print(f"\nPlease check: https://www.betfair.it/ app_key, Username, password.")
+                            
+                            # Send email notification for terms/conditions (only once per bot session)
+                            # Check both conditions: first attempt AND email not sent yet AND is terms error
+                            if login_attempt == 1 and is_terms_error and email_notifier and not email_sent_for_terms:
+                                try:
+                                    email_notifier.send_betfair_terms_confirmation_alert(str(error))
+                                    email_sent_for_terms = True  # Set flag to prevent sending again
+                                    logger.info("Email alert sent for Betfair terms confirmation (will not send again this session)")
+                                except Exception as e:
+                                    logger.error(f"Failed to send terms confirmation email: {str(e)}")
                         # For subsequent attempts, already logged above with logger.debug()
                         
                         # Only show retry message on first attempt and every 10 attempts
@@ -323,6 +368,9 @@ def main():
         # Define callback for session expiry detected by keep-alive
         def handle_session_expired():
             """Callback when keep-alive detects session expiry"""
+            # Note: We do NOT send email notifications here to avoid spam.
+            # Email notifications are only sent during initial login (first attempt).
+            # Re-login failures are logged but do not trigger email alerts.
             logger.warning("Session expiry detected by keep-alive, attempting re-login...")
             try:
                 success, error = authenticator.login()
@@ -438,6 +486,18 @@ def main():
             # via handle_session_expired callback (line 219-235)
             logger.info("Betting service initialized")
             print("✓ Betting service initialized (Milestone 3)")
+        
+        # Initialize Sound Notifier (Milestone 4)
+        sound_notifier = None
+        notifications_config = config.get("notifications", {})
+        if notifications_config.get("sound_enabled", False):
+            try:
+                sound_notifier = SoundNotifier(notifications_config)
+                logger.info("Sound notifier initialized")
+                print("✓ Sound notifications enabled")
+            except Exception as e:
+                logger.warning(f"Failed to initialize sound notifier: {str(e)}")
+                print("⚠ Sound notifications disabled (initialization failed)")
         
         # Market Detection
         print("\n" + "=" * 60)
@@ -735,6 +795,17 @@ def main():
                                             print(f"     BetId: {bet_result.get('betId', 'N/A')}")
                                             
                                             logger.info(f"Bet placed successfully: BetId={bet_result.get('betId')}, Stake={bet_result.get('stake')}, Liability={bet_result.get('liability')}")
+                                            
+                                            # Play sound notification for bet placed
+                                            if sound_notifier:
+                                                sound_notifier.play_bet_placed_sound()
+                                            
+                                            # Check if bet is matched and play matched sound
+                                            size_matched = bet_result.get("sizeMatched", 0.0)
+                                            if size_matched and size_matched > 0:
+                                                if sound_notifier:
+                                                    sound_notifier.play_bet_matched_sound()
+                                                logger.info(f"Bet matched immediately: BetId={bet_result.get('betId')}, SizeMatched={size_matched}")
                                         else:
                                             # Record skipped match
                                             logger.warning(f"Failed to place bet for {tracker.betfair_event_name}")
@@ -973,7 +1044,8 @@ def main():
                     logger.warning(f"Session expired (attempt {consecutive_errors}), attempting re-login...")
                     print(f"⚠ Session expired, re-login (attempt {consecutive_errors})...")
                     
-                    # Re-login
+                    # Re-login (Note: We do NOT send email notifications here to avoid spam.
+                    # Email notifications are only sent during initial login loop, first attempt only.)
                     try:
                         success, error = authenticator.login()
                         if success:
