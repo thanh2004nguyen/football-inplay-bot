@@ -248,12 +248,14 @@ Stake = Liability / (lay_price - 1)
 
 **Purpose:**
 - Discard match early if we know for certain the final score will be outside Excel targets
+- Considers that between minute 60 and 75, there could be 1 goal or even more than one goal
 
 **How it works:**
 1. At minute 60, checks `is_out_of_target()`:
    - Reads Excel to get all Results for that competition
-   - Calculates possible scores after +1 goal (from current score)
-   - Checks: Are all possible scores in Excel targets?
+   - Calculates ALL possible scores after +1 goal AND +2 goals (from current score)
+   - This considers all reasonable possible scorelines that could occur between minute 60 and 75
+   - Checks: Are ANY of these possible scores in Excel targets?
 2. If NO scores are in Excel targets:
    - Match changes to `DISQUALIFIED` immediately at minute 60
    - No need to wait until minute 75
@@ -261,16 +263,18 @@ Stake = Liability / (lay_price - 1)
    - Competition: "Argentina-Primera Division"
    - Excel has: ["0-0", "1-1", "0-2"]
    - At minute 60: Score = "1-1"
-   - Possible scores after 1 goal: {"2-1", "1-2"}
-   - Check: Is "2-1" in ["0-0", "1-1", "0-2"]? → No
-   - Check: Is "1-2" in ["0-0", "1-1", "0-2"]? → No
+   - Possible scores after +1 goal: {"2-1", "1-2"}
+   - Possible scores after +2 goals: {"3-1", "1-3", "2-2"}
+   - All possible scores: {"2-1", "1-2", "3-1", "1-3", "2-2"}
+   - Check: Are any of these in ["0-0", "1-1", "0-2"]? → No
    - → DISQUALIFIED immediately at minute 60
 
 **Result:**
 - Match is discarded early, saving time and resources
+- More accurate than checking only +1 goal (prevents false disqualifications)
 
 **Implementation:**
-- File: `src/logic/qualification.py` - `is_out_of_target()`, `get_excel_targets_for_competition()`
+- File: `src/logic/qualification.py` - `is_out_of_target()`, `get_possible_scores_after_multiple_goals()`, `get_excel_targets_for_competition()`
 - Integration: `src/logic/match_tracker.py` - `update_state()`
 
 ---
@@ -318,8 +322,10 @@ Stake = Liability / (lay_price - 1)
    - Recorded in "Skipped Matches.xlsx"
 
 4. ✅ **Early discard at minute 60: If score not in Excel targets → discard early**
-   - Checks at minute 60 if current score + 1 goal can create any score in Excel
+   - Checks at minute 60 if current score + 1 goal OR +2 goals can create any score in Excel
+   - Considers all reasonable possible scorelines between minute 60 and 75
    - If not → DISQUALIFIED immediately
+   - More accurate than checking only +1 goal (prevents false disqualifications)
    - Saves time and resources
 
 5. ✅ **No stake update after match ends**

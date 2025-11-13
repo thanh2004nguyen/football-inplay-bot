@@ -166,6 +166,58 @@ def get_possible_scores_after_one_goal(current_score: str) -> Set[str]:
         return set()
 
 
+def get_possible_scores_after_multiple_goals(current_score: str, max_goals: int = 2) -> Set[str]:
+    """
+    Get all possible scores after multiple goals (up to max_goals) are scored
+    
+    This function considers all reasonable possible scorelines that could occur
+    between minute 60 and 75, including:
+    - +1 goal scenarios
+    - +2 goals scenarios
+    - (optionally +3 goals if max_goals >= 3)
+    
+    Example: If current score is "1-1" and max_goals=2:
+    - After 1 goal: {"2-1", "1-2"}
+    - After 2 goals: {"3-1", "1-3", "2-2"}
+    - Total: {"2-1", "1-2", "3-1", "1-3", "2-2"}
+    
+    Args:
+        current_score: Current score (e.g., "1-1", "0-0", "2-1")
+        max_goals: Maximum number of goals to consider (default: 2)
+    
+    Returns:
+        Set of all possible scores after 1 to max_goals goals
+    """
+    try:
+        parts = current_score.split("-")
+        if len(parts) != 2:
+            return set()
+        
+        home_goals = int(parts[0].strip())
+        away_goals = int(parts[1].strip())
+        
+        all_possible_scores = set()
+        
+        # Generate all possible score combinations for 1 to max_goals goals
+        # For each number of goals (1 to max_goals), consider all ways to distribute them
+        for total_goals_to_add in range(1, max_goals + 1):
+            # For each distribution of goals (home goals + away goals = total_goals_to_add)
+            for home_goals_to_add in range(total_goals_to_add + 1):
+                away_goals_to_add = total_goals_to_add - home_goals_to_add
+                
+                new_home = home_goals + home_goals_to_add
+                new_away = away_goals + away_goals_to_add
+                
+                possible_score = f"{new_home}-{new_away}"
+                all_possible_scores.add(possible_score)
+        
+        return all_possible_scores
+        
+    except (ValueError, IndexError) as e:
+        logger.warning(f"Error parsing score '{current_score}': {str(e)}")
+        return set()
+
+
 def is_out_of_target(score: str, current_minute: int, target_over: float,
                     competition_name: Optional[str] = None,
                     excel_path: Optional[str] = None) -> Tuple[bool, str]:
@@ -173,7 +225,9 @@ def is_out_of_target(score: str, current_minute: int, target_over: float,
     Check if match is out of target at minute 60
     
     Logic (per client requirements):
-    - If Excel targets are provided: Check if current score + 1 goal can create any score in Excel targets
+    - If Excel targets are provided: Check if current score + 1 goal OR +2 goals can create any score in Excel targets
+    - Between minute 60 and 75, there could be 1 goal or even more than one goal
+    - Therefore, we check ALL reasonable possible scorelines after +1 goal and +2 goals
     - If not in Excel targets: Match is out of target and can be discarded early
     
     Fallback logic (if Excel not available):
@@ -208,18 +262,19 @@ def is_out_of_target(score: str, current_minute: int, target_over: float,
             excel_targets = get_excel_targets_for_competition(competition_name, excel_path)
             
             if excel_targets:
-                # Get possible scores after one goal
-                possible_scores = get_possible_scores_after_one_goal(score)
+                # Get possible scores after +1 goal and +2 goals (as per client request)
+                # This considers all reasonable possible scorelines between minute 60 and 75
+                possible_scores = get_possible_scores_after_multiple_goals(score, max_goals=2)
                 
                 # Check if any possible score is in Excel targets
                 matching_scores = possible_scores & excel_targets
                 
                 if not matching_scores:
-                    # None of the possible scores are in Excel targets → out of target
-                    return True, f"Score {score} at minute 60: possible scores after 1 goal {possible_scores} are not in Excel targets {excel_targets} for {competition_name}"
+                    # None of the possible scores (after +1 or +2 goals) are in Excel targets → out of target
+                    return True, f"Score {score} at minute 60: possible scores after +1/+2 goals {sorted(possible_scores)} are not in Excel targets {sorted(excel_targets)} for {competition_name}"
                 else:
                     # At least one possible score is in Excel targets → still in target
-                    return False, f"Score {score} at minute 60: at least one possible score {matching_scores} is in Excel targets"
+                    return False, f"Score {score} at minute 60: at least one possible score {sorted(matching_scores)} is in Excel targets"
             else:
                 # Excel file not found or competition not found → fallback to old logic
                 logger.debug(f"Excel targets not available for {competition_name}, using fallback logic")
