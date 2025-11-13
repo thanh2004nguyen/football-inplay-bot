@@ -5,8 +5,8 @@ import requests
 import sys
 from pathlib import Path
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+# Add src to path (go up one level from tests/ to project root, then into src/)
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from config.loader import load_config
 

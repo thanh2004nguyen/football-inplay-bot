@@ -14,6 +14,11 @@
     "polling_interval_seconds": 10,
     "in_play_only": true
   },
+  "betfair_api": {
+    "_comment": "Betfair API rate limiting and data weight limits",
+    "max_data_weight_points": 190,
+    "_note": "Betfair API limit is 200 points per request. Using 190 for safety margin. Formula: sum(Weight) * number_of_markets <= max_data_weight_points"
+  },
   "logging": {
     "level": "INFO",
     "file_path": "logs/betfair_bot.log",
@@ -28,12 +33,16 @@
     "retry_delay_seconds": 60
   },
   "live_score_api": {
+    "_comment": "Live Score API configuration",
     "api_key": "YOUR_LIVE_SCORE_API_KEY",
     "api_secret": "YOUR_LIVE_SCORE_API_SECRET",
     "base_url": "https://livescore-api.com/api-client",
     "api_plan": "trial",
+    "_note_plan": "Set to 'trial' for free plan (1500 requests/day) or 'paid' for premium plan (14500 requests/day). The bot will auto-adjust rate_limit_per_day based on this value.",
     "rate_limit_per_day": 1500,
-    "polling_interval_seconds": 60
+    "_note_rate_limit": "Maximum requests per day. For trial plan: 1500, for paid plan: 14500. If you upgrade to paid plan, change api_plan to 'paid' and update this value to 14500.",
+    "polling_interval_seconds": 60,
+    "_note_polling": "Interval between API calls in seconds. Lower value = more frequent updates but uses more requests. Calculation: Trial (1500/day): 86400s ÷ 1500 = 57.6s/request → Recommended: 60s. Paid (14500/day): 86400s ÷ 14500 = 6s/request → Minimum: 6-10s, Recommended: 30-60s (safer with buffer)."
   },
   "match_tracking": {
     "goal_detection_window": {

@@ -349,10 +349,14 @@ def main():
         
         # Initialize market service first (needed for callback)
         print("\n[Market Detection] Initializing market service...")
+        # Get max data weight points from config (default 190)
+        betfair_api_config = config.get("betfair_api", {})
+        max_data_weight_points = betfair_api_config.get("max_data_weight_points", 190)
         market_service = MarketService(
             app_key=betfair_config["app_key"],
             session_token=session_token,
-            api_endpoint=betfair_config["api_endpoint"]
+            api_endpoint=betfair_config["api_endpoint"],
+            max_data_weight_points=max_data_weight_points
         )
         print("✓ Market service initialized")
         
@@ -403,12 +407,19 @@ def main():
             match_tracker_manager = None
             zero_zero_exception_competitions: Set[str] = set()
         else:
-            # Auto-set rate limit based on plan
+            # Get rate limit from config, or auto-set based on plan
             api_plan = live_score_config.get("api_plan", "trial")
-            if api_plan == "paid":
-                rate_limit = 14500
+            rate_limit = live_score_config.get("rate_limit_per_day")
+            
+            # If not specified in config, auto-set based on plan
+            if rate_limit is None:
+                if api_plan == "paid":
+                    rate_limit = 14500
+                else:
+                    rate_limit = 1500
+                logger.info(f"Rate limit not specified in config, auto-set to {rate_limit} based on plan: {api_plan}")
             else:
-                rate_limit = 1500
+                logger.info(f"Using rate limit from config: {rate_limit}/day")
             
             live_score_client = LiveScoreClient(
                 api_key=live_score_config.get("api_key", ""),
@@ -567,8 +578,8 @@ def main():
         max_consecutive_errors = 10  # Log warning after 10 consecutive errors
         
         # Live Score API polling interval (separate from Betfair polling)
-        live_score_api_config = config.get("live_score_api", {})
-        live_api_polling_interval = live_score_api_config.get("polling_interval_seconds", 60)
+        # Use live_score_config that was already loaded above (line 401)
+        live_api_polling_interval = live_score_config.get("polling_interval_seconds", 60) if live_score_config else 60
         last_live_api_call_time = None  # None means never called before
         cached_live_matches = []  # Cache live matches between API calls
         

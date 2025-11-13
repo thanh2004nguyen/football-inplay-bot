@@ -9,10 +9,88 @@ from typing import List, Dict, Any, Optional
 logger = logging.getLogger("BetfairBot")
 
 
+def calculate_market_projection_weight(market_projection: List[str]) -> int:
+    """
+    Calculate weight for listMarketCatalogue based on MarketProjection
+    
+    According to Betfair docs:
+    - MARKET_DESCRIPTION: 1
+    - RUNNER_METADATA: 1
+    - COMPETITION, EVENT, EVENT_TYPE, MARKET_START_TIME: 0
+    
+    Args:
+        market_projection: List of projection strings
+        
+    Returns:
+        Total weight
+    """
+    weight = 0
+    for projection in market_projection:
+        if projection == "MARKET_DESCRIPTION":
+            weight += 1
+        elif projection == "RUNNER_METADATA":
+            weight += 1
+        # COMPETITION, EVENT, EVENT_TYPE, MARKET_START_TIME have weight 0
+    return weight
+
+
+def calculate_price_projection_weight(price_projection: Dict[str, Any]) -> int:
+    """
+    Calculate weight for listMarketBook based on PriceProjection
+    
+    According to Betfair docs:
+    - Null (no projection): 2
+    - SP_AVAILABLE: 3
+    - SP_TRADED: 7
+    - EX_BEST_OFFERS: 5
+    - EX_ALL_OFFERS: 17
+    - EX_TRADED: 17
+    - EX_BEST_OFFERS + EX_TRADED: 20 (combined, not sum)
+    - EX_ALL_OFFERS + EX_TRADED: 32 (combined, not sum)
+    
+    Args:
+        price_projection: Price projection dict with "priceData" key
+        
+    Returns:
+        Total weight
+    """
+    if not price_projection or "priceData" not in price_projection:
+        return 2  # Null projection
+    
+    price_data = price_projection.get("priceData", [])
+    
+    # Check for special combinations first
+    has_ex_best_offers = "EX_BEST_OFFERS" in price_data
+    has_ex_traded = "EX_TRADED" in price_data
+    has_ex_all_offers = "EX_ALL_OFFERS" in price_data
+    
+    if has_ex_all_offers and has_ex_traded:
+        return 32  # EX_ALL_OFFERS + EX_TRADED = 32
+    elif has_ex_best_offers and has_ex_traded:
+        return 20  # EX_BEST_OFFERS + EX_TRADED = 20
+    
+    # Calculate individual weights
+    weight = 0
+    for data_type in price_data:
+        if data_type == "SP_AVAILABLE":
+            weight += 3
+        elif data_type == "SP_TRADED":
+            weight += 7
+        elif data_type == "EX_BEST_OFFERS":
+            weight += 5
+        elif data_type == "EX_ALL_OFFERS":
+            weight += 17
+        elif data_type == "EX_TRADED":
+            weight += 17
+    
+    return weight if weight > 0 else 2  # Default to 2 if empty
+
+
 class MarketService:
     """Handles Betfair market data retrieval"""
     
-    def __init__(self, app_key: str, session_token: str, api_endpoint: str):
+    def __init__(self, app_key: str, session_token: str, api_endpoint: str, 
+                 max_data_weight_points: int = 190):
         """
         Initialize market service
         
@@ -20,10 +98,12 @@ class MarketService:
             app_key: Betfair Application Key
             session_token: Current session token
             api_endpoint: Betfair API endpoint base URL
+            max_data_weight_points: Maximum data weight points per request (default 190, Betfair limit is 200)
         """
         self.app_key = app_key
         self.session_token = session_token
         self.api_endpoint = api_endpoint.rstrip('/')
+        self.max_data_weight_points = max_data_weight_points
         self.headers = {
             'X-Application': app_key,
             'X-Authentication': session_token,
@@ -125,23 +205,36 @@ class MarketService:
             if market_type_codes:
                 filter_dict["marketTypeCodes"] = market_type_codes
             
+            # Reduce marketProjection to minimize data size
+            # Only request essential fields to avoid TOO_MUCH_DATA
+            market_projection = [
+                "COMPETITION",
+                "EVENT",
+                "MARKET_DESCRIPTION"
+            ]
+            
+            # Calculate weight and adjust max_results to stay within limit
+            projection_weight = calculate_market_projection_weight(market_projection)
+            max_markets_by_weight = self.max_data_weight_points // projection_weight if projection_weight > 0 else 100
+            
             # Reduce maxResults to avoid TOO_MUCH_DATA error
             # When filtering by competitions, still limit results
             if competition_ids:
-                max_results = min(max_results, 50)  # Limit to 50 when filtering by competitions
+                max_results = min(max_results, 50, max_markets_by_weight)
             else:
-                max_results = min(max_results, 100)  # Limit to 100 when getting all competitions
+                max_results = min(max_results, 100, max_markets_by_weight)
             
-            # Reduce marketProjection to minimize data size
-            # Only request essential fields to avoid TOO_MUCH_DATA
+            # Final validation: ensure we don't exceed weight limit
+            total_weight = projection_weight * max_results
+            if total_weight > self.max_data_weight_points:
+                max_results = self.max_data_weight_points // projection_weight
+                logger.warning(f"Adjusted max_results to {max_results} to stay within data weight limit "
+                             f"({projection_weight} weight × {max_results} markets = {total_weight} points)")
+            
             payload = {
                 "filter": filter_dict,
                 "maxResults": max_results,
-                "marketProjection": [
-                    "COMPETITION",
-                    "EVENT",
-                    "MARKET_DESCRIPTION"
-                ]
+                "marketProjection": market_projection
             }
             
             logger.debug(f"Requesting market catalogue with filter: {filter_dict}")
@@ -180,6 +273,8 @@ class MarketService:
         """
         Get detailed market book data including prices
         
+        Automatically splits requests if data weight would exceed limit.
+        
         Args:
             market_ids: List of market IDs
             price_projection: Optional price projection settings
@@ -190,21 +285,52 @@ class MarketService:
         try:
             url = f"{self.api_endpoint}/listMarketBook/"
             
-            payload = {
-                "marketIds": market_ids,
-                "priceProjection": price_projection or {
+            # Use default projection if not provided
+            if price_projection is None:
+                price_projection = {
                     "priceData": ["EX_BEST_OFFERS", "SP_AVAILABLE", "SP_TRADED"]
                 }
-            }
             
-            response = requests.post(url, json=payload, headers=self.headers, timeout=30)
-            response.raise_for_status()
+            # Calculate weight for this price projection
+            projection_weight = calculate_price_projection_weight(price_projection)
             
-            result = response.json()
-            market_books = result if isinstance(result, list) else []
+            # Calculate max markets per request
+            max_markets_per_request = self.max_data_weight_points // projection_weight if projection_weight > 0 else 1
             
-            logger.debug(f"Retrieved market book for {len(market_books)} markets")
-            return market_books
+            # If we exceed limit, split into multiple requests
+            all_market_books = []
+            for i in range(0, len(market_ids), max_markets_per_request):
+                batch_market_ids = market_ids[i:i + max_markets_per_request]
+                
+                # Final validation
+                total_weight = projection_weight * len(batch_market_ids)
+                if total_weight > self.max_data_weight_points:
+                    # Further reduce batch size if needed
+                    max_batch_size = self.max_data_weight_points // projection_weight
+                    batch_market_ids = batch_market_ids[:max_batch_size]
+                    logger.warning(f"Reduced batch size to {len(batch_market_ids)} markets to stay within "
+                                 f"data weight limit ({projection_weight} weight × {len(batch_market_ids)} = "
+                                 f"{projection_weight * len(batch_market_ids)} points)")
+                
+                payload = {
+                    "marketIds": batch_market_ids,
+                    "priceProjection": price_projection
+                }
+                
+                response = requests.post(url, json=payload, headers=self.headers, timeout=30)
+                response.raise_for_status()
+                
+                result = response.json()
+                batch_market_books = result if isinstance(result, list) else []
+                all_market_books.extend(batch_market_books)
+                
+                if len(market_ids) > max_markets_per_request:
+                    logger.debug(f"Split request: {len(batch_market_ids)}/{len(market_ids)} markets "
+                               f"(weight: {projection_weight} × {len(batch_market_ids)} = "
+                               f"{projection_weight * len(batch_market_ids)} points)")
+            
+            logger.debug(f"Retrieved market book for {len(all_market_books)} markets")
+            return all_market_books
             
         except Exception as e:
             logger.error(f"Error listing market book: {str(e)}")

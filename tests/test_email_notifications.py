@@ -6,8 +6,8 @@ import sys
 from pathlib import Path
 import json
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+# Add src to path (go up one level from tests/ to project root, then into src/)
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from notifications.email_notifier import EmailNotifier
 
