@@ -110,7 +110,10 @@ pip install -r requirements.txt
 
 ### Method 2: Using Startup Script (Windows)
 
-1. Double-click `scripts/run_bot.cmd` (or create one based on `run_milestone1.cmd`)
+1. Double-click `scripts/run_bot.cmd` to start the bot
+   - The script will automatically activate the virtual environment
+   - Then run `python src\main.py`
+   - Press `Ctrl+C` to stop the bot
 
 ### What the Bot Does
 
@@ -155,7 +158,7 @@ BetfairItalyBot/
 ├── logs/                       # Log files (auto-created)
 │   └── betfair_bot.log
 ├── scripts/
-│   └── run_milestone1.cmd      # Windows startup script
+│   └── run_bot.cmd              # Windows startup script
 ├── src/
 │   ├── auth/                   # Authentication
 │   │   ├── cert_login.py       # Certificate-based login

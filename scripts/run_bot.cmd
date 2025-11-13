@@ -1,5 +1,5 @@
 @echo off
-REM Betfair Italy Bot - Milestone 1 Runner Script
+REM Betfair Italy Bot - Startup Script
 REM Activates venv and runs the main script
 
 cd /d "%~dp0.."
@@ -15,7 +15,7 @@ if errorlevel 1 (
 
 echo.
 echo ========================================
-echo Betfair Italy Bot - Milestone 1
+echo Betfair Italy Bot
 echo ========================================
 echo.
 
