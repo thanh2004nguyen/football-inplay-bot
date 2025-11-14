@@ -284,41 +284,52 @@ def parse_match_teams(match_data: Dict[str, Any]) -> tuple:
 def parse_match_competition(match_data: Dict[str, Any]) -> str:
     """
     Parse competition/league name from match data
+    Returns format: "ID_Name" (e.g., "4_Serie A") if ID is available, otherwise just "Name"
     
     According to API documentation:
-    - competition: object with "name" field
+    - competition: object with "id" and "name" fields
     
     Args:
         match_data: Match data dictionary from API
     
     Returns:
-        Competition name, or empty string if not found
+        Competition in format "ID_Name" if ID available, or just "Name" if no ID, or empty string if not found
     """
     try:
-        competition = None
+        competition_name = None
+        competition_id = None
         
-        # API format: competition.name
+        # API format: competition.id and competition.name
         if "competition" in match_data:
             comp_obj = match_data["competition"]
             if isinstance(comp_obj, dict):
-                competition = comp_obj.get("name")
+                competition_id = comp_obj.get("id")
+                competition_name = comp_obj.get("name")
         
         # Fallback: try other formats
-        if not competition:
+        if not competition_name:
             if "league" in match_data:
-                competition = match_data["league"]
+                competition_name = match_data["league"]
             elif "competition_name" in match_data:
-                competition = match_data["competition_name"]
+                competition_name = match_data["competition_name"]
             elif "league_name" in match_data:
-                competition = match_data["league_name"]
+                competition_name = match_data["league_name"]
             elif "tournament" in match_data:
-                competition = match_data["tournament"]
+                competition_name = match_data["tournament"]
             
-            # If competition is a dict, get name
-            if isinstance(competition, dict):
-                competition = competition.get("name") or competition.get("title")
+            # If competition is a dict, get name and id
+            if isinstance(competition_name, dict):
+                competition_id = competition_name.get("id")
+                competition_name = competition_name.get("name") or competition_name.get("title")
         
-        return competition if competition else ""
+        if not competition_name:
+            return ""
+        
+        # Return format: "ID_Name" if ID is available, otherwise just "Name"
+        if competition_id:
+            return f"{competition_id}_{competition_name}"
+        else:
+            return competition_name
         
     except Exception as e:
         logger.warning(f"Error parsing competition name: {str(e)}")

@@ -95,9 +95,10 @@ def check_zero_zero_exception(score: str, current_minute: int,
 def get_excel_targets_for_competition(competition_name: str, excel_path: str) -> Set[str]:
     """
     Get all Result (score) targets from Excel for a specific competition
+    Supports both old format (Competition column) and new format (Competition-Live column)
     
     Args:
-        competition_name: Competition name (will be normalized for matching)
+        competition_name: Competition name from Live Score API (will be matched with Competition-Live or Competition)
         excel_path: Path to Excel file
     
     Returns:
@@ -106,18 +107,80 @@ def get_excel_targets_for_competition(competition_name: str, excel_path: str) ->
     try:
         df = pd.read_excel(excel_path)
         
-        if 'Competition' not in df.columns or 'Result' not in df.columns:
-            logger.warning(f"Required columns not found in Excel file")
+        has_competition_live = 'Competition-Live' in df.columns
+        has_competition_old = 'Competition' in df.columns
+        
+        if not has_competition_live and not has_competition_old:
+            logger.warning(f"Neither 'Competition-Live' nor 'Competition' column found in Excel file")
+            return set()
+        
+        if 'Result' not in df.columns:
+            logger.warning(f"Column 'Result' not found in Excel file")
             return set()
         
         # Normalize competition name for matching
+        # Support format: "ID_Name" (e.g., "4_Serie A") or just "Name" (e.g., "Serie A")
         normalized_competition = normalize_text(competition_name)
         
-        # Find matching rows
-        matches = df[
-            (df['Competition'].astype(str).str.strip() == competition_name) |
-            (df['Competition'].astype(str).str.strip().apply(lambda x: normalize_text(x) == normalized_competition))
-        ]
+        # Extract ID and name if format is "ID_Name"
+        competition_id = None
+        competition_name_only = competition_name
+        if "_" in competition_name:
+            parts = competition_name.split("_", 1)
+            try:
+                competition_id = parts[0].strip()
+                competition_name_only = parts[1].strip()
+            except:
+                pass
+        
+        # Find matching rows - Priority: Competition-Live, then Competition
+        matches = pd.DataFrame()
+        
+        if has_competition_live:
+            # Try matching with Competition-Live column (new format)
+            # Support both "ID_Name" format and "Name" format
+            def match_competition_live(cell_value):
+                if pd.isna(cell_value):
+                    return False
+                cell_str = str(cell_value).strip()
+                
+                # Exact match
+                if cell_str == competition_name:
+                    return True
+                
+                # Match with normalized text
+                if normalize_text(cell_str) == normalized_competition:
+                    return True
+                
+                # If competition_name is "ID_Name" format, also try matching just the name part
+                if competition_id and competition_name_only:
+                    # Match with "ID_Name" format in Excel
+                    if cell_str == f"{competition_id}_{competition_name_only}":
+                        return True
+                    # Match with just name part
+                    if normalize_text(cell_str) == normalize_text(competition_name_only):
+                        return True
+                
+                # If Excel has "ID_Name" format, extract and match name part
+                if "_" in cell_str:
+                    try:
+                        excel_parts = cell_str.split("_", 1)
+                        excel_name = excel_parts[1].strip()
+                        if normalize_text(excel_name) == normalize_text(competition_name_only):
+                            return True
+                    except:
+                        pass
+                
+                return False
+            
+            matches = df[df['Competition-Live'].apply(match_competition_live)]
+        
+        if matches.empty and has_competition_old:
+            # Fallback to Competition column (old format)
+            matches = df[
+                (df['Competition'].astype(str).str.strip() == competition_name) |
+                (df['Competition'].astype(str).str.strip().apply(lambda x: normalize_text(x) == normalized_competition))
+            ]
         
         if matches.empty:
             logger.debug(f"No competition match found for: {competition_name} (normalized: {normalized_competition})")

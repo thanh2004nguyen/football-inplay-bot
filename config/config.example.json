@@ -93,6 +93,13 @@
       "recipient_email": "RECIPIENT_EMAIL@example.com",
       "subject_prefix": "[Betfair Bot]",
       "_note": "For Gmail, you need to use App Password (not regular password). Enable 2-Step Verification and generate App Password from: https://myaccount.google.com/apppasswords"
+    },
+    "telegram_enabled": false,
+    "telegram": {
+      "bot_token": "YOUR_BOT_TOKEN",
+      "chat_id": "YOUR_CHAT_ID",
+      "_note": "To get bot_token: Create bot with @BotFather on Telegram (/newbot). To get chat_id: Use @userinfobot or check getUpdates API response.",
+      "_note2": "Make sure to start a conversation with your bot first (send /start to your bot) before using notifications."
     }
   }
 }

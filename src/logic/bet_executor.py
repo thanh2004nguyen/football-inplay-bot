@@ -275,14 +275,20 @@ def calculate_lay_price(best_lay_price: float, ticks_offset: int = 2,
     return round_to_valid_price(lay_price, ladder_type)
 
 
-def get_stake_from_excel(competition_name: str, score: str, excel_path: str) -> Optional[float]:
+def get_stake_from_excel(competition_name: str, score: str, excel_path: str, 
+                        betfair_competition_name: Optional[str] = None) -> Optional[float]:
     """
     Get stake percentage (liability percentage) from Excel file based on Competition and Result
+    Supports both old format (Competition column) and new format (Competition-Live column)
+    
+    When Competition-Live matches multiple rows (e.g., "Serie A" for both Italy and Brazil),
+    uses Competition-Betfair to disambiguate if provided.
     
     Args:
-        competition_name: Competition name (will be normalized for matching)
+        competition_name: Competition name from Live Score API (will be matched with Competition-Live or Competition)
         score: Current score at minute 75 (format: "1-1", "0-0", "1-2")
         excel_path: Path to Excel file (Competitions_Results_Odds_Stake.xlsx)
+        betfair_competition_name: Optional Betfair competition name (for disambiguation when Competition-Live is ambiguous)
     
     Returns:
         Stake percentage (liability percentage) if found, None if not found
@@ -292,22 +298,84 @@ def get_stake_from_excel(competition_name: str, score: str, excel_path: str) -> 
         df = pd.read_excel(excel_path)
         
         # Check required columns
-        if 'Competition' not in df.columns or 'Result' not in df.columns or 'Stake' not in df.columns:
-            logger.error(f"Required columns not found in Excel file. Available: {df.columns.tolist()}")
+        has_competition_live = 'Competition-Live' in df.columns
+        has_competition_betfair = 'Competition-Betfair' in df.columns
+        has_competition_old = 'Competition' in df.columns
+        
+        if not has_competition_live and not has_competition_old:
+            logger.error(f"Neither 'Competition-Live' nor 'Competition' column found in Excel file. Available: {df.columns.tolist()}")
+            return None
+        
+        if 'Result' not in df.columns or 'Stake' not in df.columns:
+            logger.error(f"Required columns 'Result' or 'Stake' not found in Excel file. Available: {df.columns.tolist()}")
             return None
         
         # Normalize competition name for matching
+        # Support format: "ID_Name" (e.g., "4_Serie A") or just "Name" (e.g., "Serie A")
         normalized_competition = normalize_text(competition_name)
+        
+        # Extract ID and name if format is "ID_Name"
+        competition_id = None
+        competition_name_only = competition_name
+        if "_" in competition_name:
+            parts = competition_name.split("_", 1)
+            try:
+                competition_id = parts[0].strip()
+                competition_name_only = parts[1].strip()
+            except:
+                pass
         
         # Normalize score format (ensure format is "X-Y")
         score_normalized = score.strip().replace(":", "-")
         
-        # Find matching row
-        # Try exact match first, then normalized match
-        matches = df[
-            (df['Competition'].astype(str).str.strip() == competition_name) |
-            (df['Competition'].astype(str).str.strip().apply(lambda x: normalize_text(x) == normalized_competition))
-        ]
+        # Find matching row - Priority: Competition-Live, then Competition
+        matches = pd.DataFrame()
+        
+        if has_competition_live:
+            # Try matching with Competition-Live column (new format)
+            # Support both "ID_Name" format and "Name" format
+            def match_competition_live(cell_value):
+                if pd.isna(cell_value):
+                    return False
+                cell_str = str(cell_value).strip()
+                
+                # Exact match
+                if cell_str == competition_name:
+                    return True
+                
+                # Match with normalized text
+                if normalize_text(cell_str) == normalized_competition:
+                    return True
+                
+                # If competition_name is "ID_Name" format, also try matching just the name part
+                if competition_id and competition_name_only:
+                    # Match with "ID_Name" format in Excel
+                    if cell_str == f"{competition_id}_{competition_name_only}":
+                        return True
+                    # Match with just name part
+                    if normalize_text(cell_str) == normalize_text(competition_name_only):
+                        return True
+                
+                # If Excel has "ID_Name" format, extract and match name part
+                if "_" in cell_str:
+                    try:
+                        excel_parts = cell_str.split("_", 1)
+                        excel_name = excel_parts[1].strip()
+                        if normalize_text(excel_name) == normalize_text(competition_name_only):
+                            return True
+                    except:
+                        pass
+                
+                return False
+            
+            matches = df[df['Competition-Live'].apply(match_competition_live)]
+        
+        if matches.empty and has_competition_old:
+            # Fallback to Competition column (old format)
+            matches = df[
+                (df['Competition'].astype(str).str.strip() == competition_name) |
+                (df['Competition'].astype(str).str.strip().apply(lambda x: normalize_text(x) == normalized_competition))
+            ]
         
         if matches.empty:
             logger.debug(f"No competition match found for: {competition_name} (normalized: {normalized_competition})")
@@ -319,6 +387,64 @@ def get_stake_from_excel(competition_name: str, score: str, excel_path: str) -> 
         if score_matches.empty:
             logger.debug(f"Score {score_normalized} not found in Excel for competition {competition_name}")
             return None
+        
+        # If multiple matches and Competition-Betfair is available, use it to disambiguate
+        if len(score_matches) > 1 and has_competition_betfair and betfair_competition_name:
+            # Support format: "ID_Name" (e.g., "81_Italian Serie A") or just "Name" (e.g., "Italian Serie A")
+            betfair_normalized = normalize_text(betfair_competition_name)
+            
+            # Extract ID and name if format is "ID_Name"
+            betfair_competition_id = None
+            betfair_competition_name_only = betfair_competition_name
+            if "_" in betfair_competition_name:
+                parts = betfair_competition_name.split("_", 1)
+                try:
+                    betfair_competition_id = parts[0].strip()
+                    betfair_competition_name_only = parts[1].strip()
+                except:
+                    pass
+            
+            def match_competition_betfair(cell_value):
+                if pd.isna(cell_value):
+                    return False
+                cell_str = str(cell_value).strip()
+                
+                # Exact match
+                if cell_str == betfair_competition_name:
+                    return True
+                
+                # Match with normalized text
+                if normalize_text(cell_str) == betfair_normalized:
+                    return True
+                
+                # If betfair_competition_name is "ID_Name" format, also try matching just the name part
+                if betfair_competition_id and betfair_competition_name_only:
+                    # Match with "ID_Name" format in Excel
+                    if cell_str == f"{betfair_competition_id}_{betfair_competition_name_only}":
+                        return True
+                    # Match with just name part
+                    if normalize_text(cell_str) == normalize_text(betfair_competition_name_only):
+                        return True
+                
+                # If Excel has "ID_Name" format, extract and match name part
+                if "_" in cell_str:
+                    try:
+                        excel_parts = cell_str.split("_", 1)
+                        excel_name = excel_parts[1].strip()
+                        if normalize_text(excel_name) == normalize_text(betfair_competition_name_only):
+                            return True
+                    except:
+                        pass
+                
+                return False
+            
+            betfair_matches = score_matches[score_matches['Competition-Betfair'].apply(match_competition_betfair)]
+            
+            if not betfair_matches.empty:
+                score_matches = betfair_matches
+                logger.debug(f"Disambiguated using Competition-Betfair: '{betfair_competition_name}' -> {len(score_matches)} match(es)")
+            else:
+                logger.warning(f"Multiple matches found for '{competition_name}' but Competition-Betfair '{betfair_competition_name}' did not match. Using first match.")
         
         # Get stake value (first match if multiple)
         stake_value = score_matches.iloc[0]['Stake']

@@ -14,23 +14,30 @@ logger = logging.getLogger("BetfairBot")
 def read_competitions_from_excel(excel_path: str) -> Set[str]:
     """
     Read unique competition names from Excel file
+    Supports both old format (Competition column) and new format (Competition-Live column)
     
     Args:
         excel_path: Path to Excel file
     
     Returns:
-        Set of unique competition names
+        Set of unique competition names (from Competition-Live if available, else Competition)
     """
     try:
         df = pd.read_excel(excel_path)
         
-        # Get unique competition names from 'Competition' column
-        if 'Competition' in df.columns:
+        # Priority 1: Use new columns (Competition-Live) if available
+        if 'Competition-Live' in df.columns:
+            competitions = df['Competition-Live'].dropna().unique().tolist()
+            logger.info(f"Read {len(competitions)} unique competitions from 'Competition-Live' column")
+            return set(competitions)
+        
+        # Priority 2: Fallback to old column (Competition)
+        elif 'Competition' in df.columns:
             competitions = df['Competition'].dropna().unique().tolist()
-            logger.info(f"Read {len(competitions)} unique competitions from Excel file")
+            logger.info(f"Read {len(competitions)} unique competitions from 'Competition' column (legacy)")
             return set(competitions)
         else:
-            logger.warning(f"Column 'Competition' not found in Excel file. Available columns: {df.columns.tolist()}")
+            logger.warning(f"Neither 'Competition-Live' nor 'Competition' column found in Excel file. Available columns: {df.columns.tolist()}")
             return set()
             
     except Exception as e:
@@ -461,10 +468,108 @@ def map_competitions_to_ids(competition_names: Set[str],
     return list(set(matched_ids))  # Remove duplicates
 
 
+def map_competitions_direct_from_excel(excel_path: str,
+                                       betfair_competitions: List[Dict[str, Any]]) -> List[int]:
+    """
+    Map competitions directly from Competition-Betfair column (new format)
+    This provides 100% accurate mapping without similarity matching
+    
+    Args:
+        excel_path: Path to Excel file
+        betfair_competitions: List of competitions from Betfair API
+    
+    Returns:
+        List of competition IDs that match
+    """
+    try:
+        df = pd.read_excel(excel_path)
+        
+        # Check if new columns exist
+        if 'Competition-Betfair' not in df.columns:
+            logger.debug("'Competition-Betfair' column not found, cannot use direct mapping")
+            return []
+        
+        # Get unique Betfair competition names from Excel
+        betfair_names_from_excel = df['Competition-Betfair'].dropna().unique().tolist()
+        
+        if not betfair_names_from_excel:
+            logger.debug("No 'Competition-Betfair' values found in Excel")
+            return []
+        
+        # Create a mapping: Betfair name -> Betfair ID, and "ID_Name" -> Betfair ID
+        betfair_name_to_id = {}
+        betfair_id_name_to_id = {}
+        for comp in betfair_competitions:
+            comp_info = comp.get("competition", {})
+            comp_id = comp_info.get("id")
+            comp_name = comp_info.get("name", "")
+            if comp_id and comp_name:
+                # Map name -> ID
+                betfair_name_to_id[comp_name] = comp_id
+                # Map "ID_Name" -> ID
+                betfair_id_name_to_id[f"{comp_id}_{comp_name}"] = comp_id
+        
+        # Match Excel Betfair names with actual Betfair competitions
+        matched_ids = []
+        unmatched_names = []
+        
+        for excel_betfair_name in betfair_names_from_excel:
+            excel_betfair_name = str(excel_betfair_name).strip()
+            
+            # Try exact match first (supports both "Name" and "ID_Name" format)
+            if excel_betfair_name in betfair_name_to_id:
+                comp_id = betfair_name_to_id[excel_betfair_name]
+                matched_ids.append(comp_id)
+                logger.info(f"Direct match: '{excel_betfair_name}' -> ID: {comp_id}")
+            elif excel_betfair_name in betfair_id_name_to_id:
+                comp_id = betfair_id_name_to_id[excel_betfair_name]
+                matched_ids.append(comp_id)
+                logger.info(f"Direct match (ID_Name format): '{excel_betfair_name}' -> ID: {comp_id}")
+            else:
+                # Try case-insensitive match
+                found = False
+                for betfair_name, comp_id in betfair_name_to_id.items():
+                    if excel_betfair_name.lower() == betfair_name.lower():
+                        matched_ids.append(comp_id)
+                        logger.info(f"Direct match (case-insensitive): '{excel_betfair_name}' -> '{betfair_name}' (ID: {comp_id})")
+                        found = True
+                        break
+                
+                # Try matching with "ID_Name" format (extract ID from Excel and match)
+                if not found and "_" in excel_betfair_name:
+                    try:
+                        excel_parts = excel_betfair_name.split("_", 1)
+                        excel_id = excel_parts[0].strip()
+                        excel_name = excel_parts[1].strip()
+                        # Try matching with name part
+                        for betfair_name, comp_id in betfair_name_to_id.items():
+                            if excel_name.lower() == betfair_name.lower():
+                                matched_ids.append(comp_id)
+                                logger.info(f"Direct match (ID_Name format, name part): '{excel_betfair_name}' -> '{betfair_name}' (ID: {comp_id})")
+                                found = True
+                                break
+                    except:
+                        pass
+                
+                if not found:
+                    unmatched_names.append(excel_betfair_name)
+        
+        if unmatched_names:
+            logger.warning(f"Direct mapping: {len(unmatched_names)} Betfair competition name(s) not found: {', '.join(unmatched_names[:10])}{'...' if len(unmatched_names) > 10 else ''}")
+        
+        logger.info(f"Direct mapping: Matched {len(matched_ids)} competition(s) from {len(betfair_names_from_excel)} Excel entries")
+        return list(set(matched_ids))  # Remove duplicates
+        
+    except Exception as e:
+        logger.error(f"Error in direct mapping from Excel: {str(e)}")
+        return []
+
+
 def get_competition_ids_from_excel(excel_path: str, 
                                    betfair_competitions: List[Dict[str, Any]]) -> List[int]:
     """
     Main function to get competition IDs from Excel file
+    Uses direct mapping (Competition-Betfair) if available, otherwise falls back to similarity matching
     
     Args:
         excel_path: Path to Excel file
@@ -473,22 +578,40 @@ def get_competition_ids_from_excel(excel_path: str,
     Returns:
         List of competition IDs
     """
-    # Read competition names from Excel
-    competition_names = read_competitions_from_excel(excel_path)
-    
-    if not competition_names:
-        logger.warning("No competitions found in Excel file")
+    try:
+        df = pd.read_excel(excel_path)
+        
+        # Strategy 1: Direct mapping (new format with Competition-Betfair column)
+        if 'Competition-Betfair' in df.columns:
+            logger.info("Using direct mapping from 'Competition-Betfair' column")
+            competition_ids = map_competitions_direct_from_excel(excel_path, betfair_competitions)
+            if competition_ids:
+                return competition_ids
+            else:
+                logger.warning("Direct mapping returned no results, falling back to similarity matching")
+        
+        # Strategy 2: Similarity matching (old format with Competition column)
+        logger.info("Using similarity matching from 'Competition' column")
+        competition_names = read_competitions_from_excel(excel_path)
+        
+        if not competition_names:
+            logger.warning("No competitions found in Excel file")
+            return []
+        
+        # Map to Betfair IDs using similarity matching
+        competition_ids = map_competitions_to_ids(competition_names, betfair_competitions)
+        
+        return competition_ids
+        
+    except Exception as e:
+        logger.error(f"Error getting competition IDs from Excel: {str(e)}")
         return []
-    
-    # Map to Betfair IDs
-    competition_ids = map_competitions_to_ids(competition_names, betfair_competitions)
-    
-    return competition_ids
 
 
 def get_competitions_with_zero_zero_exception(excel_path: str) -> Set[str]:
     """
     Read Excel to identify competitions with 0-0 exception
+    Supports both old format (Competition column) and new format (Competition-Live column)
     
     Args:
         excel_path: Path to Excel file
@@ -509,8 +632,14 @@ def get_competitions_with_zero_zero_exception(excel_path: str) -> Set[str]:
             df['Result'].astype(str).str.strip().str.lower() == '0-0'
         ]
         
-        # Get unique competition names
-        competitions = zero_zero_rows['Competition'].dropna().unique().tolist()
+        # Get unique competition names (prefer Competition-Live, fallback to Competition)
+        if 'Competition-Live' in df.columns:
+            competitions = zero_zero_rows['Competition-Live'].dropna().unique().tolist()
+        elif 'Competition' in df.columns:
+            competitions = zero_zero_rows['Competition'].dropna().unique().tolist()
+        else:
+            logger.warning("Neither 'Competition-Live' nor 'Competition' column found")
+            return set()
         
         logger.info(f"Found {len(competitions)} competition(s) with 0-0 exception from Excel file")
         if competitions:

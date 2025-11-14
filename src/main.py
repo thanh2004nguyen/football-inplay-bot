@@ -29,6 +29,7 @@ from tracking.skipped_matches_writer import SkippedMatchesWriter
 from betfair.betting_service import BettingService
 from notifications.sound_notifier import SoundNotifier
 from notifications.email_notifier import EmailNotifier
+from notifications.telegram_notifier import TelegramNotifier
 import logging
 from datetime import datetime
 
@@ -122,7 +123,8 @@ def determine_bet_outcome(final_score: str, selection: str, target_over: Optiona
 def process_finished_matches(match_tracker_manager: MatchTrackerManager,
                              bet_tracker: Optional[BetTracker],
                              excel_writer: Optional[ExcelWriter],
-                             target_over: Optional[float] = None):
+                             target_over: Optional[float] = None,
+                             telegram_notifier: Optional[Any] = None):
     """
     Process finished matches: settle bets and export to Excel
     
@@ -165,6 +167,19 @@ def process_finished_matches(match_tracker_manager: MatchTrackerManager,
                 settled_bet = bet_tracker.settle_bet(bet_record.bet_id, outcome)
                 
                 if settled_bet:
+                    # Send Telegram notification for Won/Lost bets only
+                    if telegram_notifier and outcome in ["Won", "Lost"]:
+                        try:
+                            telegram_notifier.send_bet_settled_notification(
+                                bet_record=settled_bet,
+                                outcome=outcome,
+                                profit_loss=settled_bet.profit_loss,
+                                final_score=final_score,
+                                event_name=tracker.betfair_event_name
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to send Telegram bet settled notification: {str(e)}")
+                    
                     # Export to Excel
                     try:
                         bet_dict = settled_bet.to_dict()
@@ -510,6 +525,17 @@ def main():
                 logger.warning(f"Failed to initialize sound notifier: {str(e)}")
                 print("⚠ Sound notifications disabled (initialization failed)")
         
+        # Initialize Telegram Notifier (Milestone 4)
+        telegram_notifier = None
+        if notifications_config.get("telegram_enabled", False):
+            try:
+                telegram_notifier = TelegramNotifier(notifications_config)
+                logger.info("Telegram notifier initialized")
+                print("✓ Telegram notifications enabled")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Telegram notifier: {str(e)}")
+                print("⚠ Telegram notifications disabled (initialization failed)")
+        
         # Market Detection
         print("\n" + "=" * 60)
         print("MARKET DETECTION")
@@ -816,6 +842,14 @@ def main():
                                             if size_matched and size_matched > 0:
                                                 if sound_notifier:
                                                     sound_notifier.play_bet_matched_sound()
+                                                
+                                                # Send Telegram notification for bet matched
+                                                if telegram_notifier:
+                                                    try:
+                                                        telegram_notifier.send_bet_matched_notification(bet_result)
+                                                    except Exception as e:
+                                                        logger.error(f"Failed to send Telegram bet matched notification: {str(e)}")
+                                                
                                                 logger.info(f"Bet matched immediately: BetId={bet_result.get('betId')}, SizeMatched={size_matched}")
                                         else:
                                             # Record skipped match
@@ -949,7 +983,8 @@ def main():
                                 match_tracker_manager=match_tracker_manager,
                                 bet_tracker=bet_tracker,
                                 excel_writer=excel_writer,
-                                target_over=target_over
+                                target_over=target_over,
+                                telegram_notifier=telegram_notifier
                             )
                         
                         # Cleanup finished matches
