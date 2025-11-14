@@ -288,7 +288,7 @@ def get_market_book_data(market_service: MarketService, market_id: str,
 
 
 def check_market_conditions(market_data: Dict[str, Any], 
-                           min_odds: float, max_odds: float,
+                           min_odds: float,
                            max_spread_ticks: int,
                            ladder_type: str = "CLASSIC") -> Tuple[bool, str]:
     """
@@ -297,6 +297,7 @@ def check_market_conditions(market_data: Dict[str, Any],
     Requirements (per client - Andrea):
     - Market must be stable (mature market with balanced prices)
     - Odds check must be performed on best back price of Under X.5
+    - Odds check: Under X.5 best back > min_odds (only check minimum, no maximum)
     - Lay bet must be placed on Over X.5
     - Spread check: Over X.5 best lay - Over X.5 best back (in same market)
     - Book percentage around 100% on lay side (market is mature/balanced)
@@ -310,8 +311,7 @@ def check_market_conditions(market_data: Dict[str, Any],
             - underBestBack: Under X.5 best back (for odds check)
             - laySize: Over X.5 lay size
             - totalLaySize: Over X.5 total lay size
-        min_odds: Minimum odds threshold
-        max_odds: Maximum odds threshold
+        min_odds: Minimum odds threshold (from Excel, per competition + result)
         max_spread_ticks: Maximum allowed spread in ticks
         ladder_type: Price ladder type ("CLASSIC" or "FINEST")
     
@@ -328,10 +328,14 @@ def check_market_conditions(market_data: Dict[str, Any],
     under_best_back = market_data.get("underBestBack")
     
     # Check 1: Odds threshold (check best back price of Under X.5 as per client requirement)
+    # Per client requirement: At minute 75', Odds only needs to be greater than Min_Odds
+    # Correct: Odds_75 > Min_Odds
+    # Wrong: Min_Odds < Odds_75 < Quota_Max_Lay_Over (NOT used - no maximum check)
+    # Each competition + result has its own Min_Odds from Excel
     if under_best_back is None:
         return False, "Under X.5 best back price not available"
-    if under_best_back < min_odds or under_best_back > max_odds:
-        return False, f"Under X.5 best back price {under_best_back} outside range [{min_odds}, {max_odds}]"
+    if under_best_back <= min_odds:
+        return False, f"Under X.5 best back price {under_best_back} must be higher than {min_odds}"
     
     # Check 2: Spread ≤ max_spread_ticks (critical requirement)
     # Spread is calculated from Over X.5 best back to Over X.5 best lay (same market)
@@ -376,9 +380,9 @@ def calculate_lay_price(best_lay_price: float, ticks_offset: int = 2,
 
 
 def get_stake_from_excel(competition_name: str, score: str, excel_path: str, 
-                        betfair_competition_name: Optional[str] = None) -> Optional[float]:
+                        betfair_competition_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
-    Get stake percentage (liability percentage) from Excel file based on Competition and Result
+    Get stake percentage and Min_Odds from Excel file based on Competition and Result
     Supports both old format (Competition column) and new format (Competition-Live column)
     
     When Competition-Live matches multiple rows (e.g., "Serie A" for both Italy and Brazil),
@@ -391,7 +395,8 @@ def get_stake_from_excel(competition_name: str, score: str, excel_path: str,
         betfair_competition_name: Optional Betfair competition name (for disambiguation when Competition-Live is ambiguous)
     
     Returns:
-        Stake percentage (liability percentage) if found, None if not found
+        Dictionary with 'stake' and 'min_odds' if found, None if not found
+        Format: {"stake": 5.0, "min_odds": 1.5}
     """
     try:
         # Read Excel file
@@ -409,6 +414,10 @@ def get_stake_from_excel(competition_name: str, score: str, excel_path: str,
         if 'Result' not in df.columns or 'Stake' not in df.columns:
             logger.error(f"Required columns 'Result' or 'Stake' not found in Excel file. Available: {df.columns.tolist()}")
             return None
+        
+        # Check if Min_Odds column exists (optional, will use default if not found)
+        has_min_odds = 'Min_Odds' in df.columns or 'Min Odds' in df.columns
+        min_odds_column = 'Min_Odds' if 'Min_Odds' in df.columns else ('Min Odds' if 'Min Odds' in df.columns else None)
         
         # Normalize competition name for matching
         # Support format: "ID_Name" (e.g., "4_Serie A") or just "Name" (e.g., "Serie A")
@@ -550,8 +559,9 @@ def get_stake_from_excel(competition_name: str, score: str, excel_path: str,
             else:
                 logger.warning(f"Multiple matches found for '{competition_name}' but Competition-Betfair '{betfair_competition_name}' did not match. Using first match.")
         
-        # Get stake value (first match if multiple)
-        stake_value = score_matches.iloc[0]['Stake']
+        # Get stake value and Min_Odds (first match if multiple)
+        matched_row = score_matches.iloc[0]
+        stake_value = matched_row['Stake']
         
         # Convert to float if needed
         if pd.isna(stake_value):
@@ -559,9 +569,28 @@ def get_stake_from_excel(competition_name: str, score: str, excel_path: str,
             return None
         
         stake_percent = float(stake_value)
-        logger.info(f"Found stake from Excel: {stake_percent}% for {competition_name} - {score_normalized}")
         
-        return stake_percent
+        # Get Min_Odds from Excel (each competition + result has its own Min_Odds)
+        min_odds = None
+        if min_odds_column and min_odds_column in matched_row:
+            min_odds_value = matched_row[min_odds_column]
+            if not pd.isna(min_odds_value):
+                try:
+                    min_odds = float(min_odds_value)
+                except (ValueError, TypeError):
+                    logger.warning(f"Min_Odds value is invalid for {competition_name} - {score_normalized}, using default")
+        
+        # If Min_Odds not found in Excel, use default from config (fallback)
+        if min_odds is None:
+            # This will be handled by caller, but we log it
+            logger.debug(f"Min_Odds not found in Excel for {competition_name} - {score_normalized}, will use default from config")
+        
+        logger.info(f"Found from Excel: Stake={stake_percent}%, Min_Odds={min_odds if min_odds is not None else 'default'} for {competition_name} - {score_normalized}")
+        
+        return {
+            "stake": stake_percent,
+            "min_odds": min_odds  # Can be None if not in Excel
+        }
         
     except FileNotFoundError:
         logger.error(f"Excel file not found: {excel_path}")
@@ -705,18 +734,49 @@ def execute_lay_bet(market_service: MarketService, betting_service: BettingServi
     logger.info(f"Over {target_over} prices: Back={over_best_back}, Lay={over_best_lay}")
     logger.info(f"Over lay side depth: best price size={over_lay_size}, total size={over_total_lay_size}")
     
-    # Phase 5: Check market conditions
-    # Per client requirement:
-    # - Odds check: Under X.5 best back price
-    # - Spread check: Over X.5 best lay - Over X.5 best back (in same market)
-    min_odds = bet_config.get("min_odds", 1.5)
-    max_odds = bet_config.get("max_odds", 10.0)
+    # Phase 5: Get stake and Min_Odds from Excel first (before market conditions check)
+    # Per client requirement: Each competition + result has its own Min_Odds
+    # Example: Serie A has its own Min_Odds, Premier League has different Min_Odds, etc.
+    # Bot reads the correct Min_Odds for each competition from Excel (not using a common set)
+    excel_data = get_stake_from_excel(competition_name, current_score, excel_path)
+    
+    if excel_data is None:
+        # Score not found in Excel → discard match (no bet placed)
+        logger.warning(f"Score {current_score} not found in Excel for {competition_name}. Discarding match.")
+        return {
+            "success": False,
+            "reason": f"Score {current_score} not found in Excel for {competition_name}",
+            "skip_reason": "Score not in Excel targets",
+            "bestBackPrice": under_best_back,  # Under X.5 best back
+            "bestLayPrice": over_best_lay,  # Over X.5 best lay
+            "spread_ticks": spread_ticks,
+            "competition": competition_name,
+            "score": current_score
+        }
+    
+    stake_percent = excel_data.get("stake")
+    min_odds_from_excel = excel_data.get("min_odds")
+    
+    # Use Min_Odds from Excel if available, otherwise fallback to config default
+    # Each competition + result has its own Min_Odds (e.g., Serie A has different Min_Odds than Premier League)
+    if min_odds_from_excel is not None:
+        min_odds = min_odds_from_excel
+        logger.info(f"Using Min_Odds from Excel: {min_odds} for {competition_name} - {current_score} (competition-specific odds)")
+    else:
+        # Fallback to config default if not in Excel
+        min_odds = bet_config.get("min_odds", 1.5)
+        logger.info(f"Min_Odds not in Excel, using default from config: {min_odds}")
+    
     max_spread_ticks = bet_config.get("max_spread_ticks", 4)
     ladder_type = bet_config.get("price_ladder_type", "CLASSIC")
     
-    # Create market data dict for check_market_conditions
-    # Use Over X.5 back and lay for spread calculation (same market)
-    # Use Under X.5 back for odds check (separate check)
+    # Phase 6: Check market conditions
+    # Per client requirement:
+    # - Odds check: Under X.5 best back price > min_odds (from Excel, per competition + result)
+    #   * At minute 75', Odds only needs to be greater than Min_Odds (no maximum check)
+    #   * Correct: Odds_75 > Min_Odds
+    #   * Wrong: Min_Odds < Odds_75 < Quota_Max_Lay_Over (NOT used)
+    # - Spread check: Over X.5 best lay - Over X.5 best back (in same market)
     check_market_data = {
         "bestBackPrice": over_best_back,  # Over X.5 best back (for spread calculation)
         "bestLayPrice": over_best_lay,  # Over X.5 best lay (for spread calculation)
@@ -726,7 +786,7 @@ def execute_lay_bet(market_service: MarketService, betting_service: BettingServi
     }
     
     is_valid, reason = check_market_conditions(
-        check_market_data, min_odds, max_odds, max_spread_ticks, ladder_type
+        check_market_data, min_odds, max_spread_ticks, ladder_type
     )
     
     # Calculate spread in ticks for skipped matches (Over X.5 best lay - Over X.5 best back)
@@ -744,31 +804,15 @@ def execute_lay_bet(market_service: MarketService, betting_service: BettingServi
             "marketStatus": under_market_status
         }
     
-    logger.info(f"Market conditions OK: {reason} (checked Under {target_over} best back: {under_best_back})")
+    logger.info(f"Market conditions OK: {reason} (checked Under {target_over} best back: {under_best_back} > {min_odds})")
     
-    # Phase 6: Calculate lay price for Over X.5 (+2 ticks from Over X.5 best lay price)
+    # Phase 7: Calculate lay price for Over X.5 (+2 ticks from Over X.5 best lay price)
     ticks_offset = bet_config.get("ticks_offset", 2)
     lay_price = calculate_lay_price(over_best_lay, ticks_offset, ladder_type)
     
     logger.info(f"Calculated lay price for Over {target_over}: {lay_price} (bestLay {over_best_lay} + {ticks_offset} ticks)")
     
-    # Phase 7: Get stake from Excel and calculate stake/liability
-    # Step 5.1: Read stake percentage from Excel
-    stake_percent = get_stake_from_excel(competition_name, current_score, excel_path)
-    
-    if stake_percent is None:
-        # Score not found in Excel → discard match (no bet placed)
-        logger.warning(f"Score {current_score} not found in Excel for {competition_name}. Discarding match.")
-        return {
-            "success": False,
-            "reason": f"Score {current_score} not found in Excel for {competition_name}",
-            "skip_reason": "Score not in Excel targets",
-            "bestBackPrice": under_best_back,  # Under X.5 best back
-            "bestLayPrice": over_best_lay,  # Over X.5 best lay
-            "spread_ticks": spread_ticks,
-            "competition": competition_name,
-            "score": current_score
-        }
+    # Phase 8: Calculate stake/liability (stake_percent already retrieved from Excel in Phase 5)
     
     # Step 5.2: Get account funds
     account_funds = market_service.get_account_funds()
