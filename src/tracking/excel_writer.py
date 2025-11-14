@@ -57,12 +57,47 @@ class ExcelWriter:
                     "Bankroll_Before", "Bankroll_After", "Status", "Settled_At"
                 ])
             
+            # Convert datetime strings to datetime objects if needed
+            if 'Bet_Time' in bet_record:
+                if isinstance(bet_record['Bet_Time'], str):
+                    try:
+                        bet_record['Bet_Time'] = pd.to_datetime(bet_record['Bet_Time'])
+                    except:
+                        pass  # Keep as string if conversion fails
+            
+            if 'Settled_At' in bet_record:
+                if isinstance(bet_record['Settled_At'], str) and bet_record['Settled_At']:
+                    try:
+                        bet_record['Settled_At'] = pd.to_datetime(bet_record['Settled_At'])
+                    except:
+                        pass  # Keep as string if conversion fails
+                elif bet_record.get('Settled_At') == '' or bet_record.get('Settled_At') is None:
+                    bet_record['Settled_At'] = None
+            
             # Append new record
             new_row = pd.DataFrame([bet_record])
             df = pd.concat([df, new_row], ignore_index=True)
             
-            # Save to Excel
-            df.to_excel(self.excel_path, index=False)
+            # Ensure datetime columns are properly formatted
+            if 'Bet_Time' in df.columns:
+                df['Bet_Time'] = pd.to_datetime(df['Bet_Time'], errors='coerce')
+            if 'Settled_At' in df.columns:
+                # Convert to datetime, but keep NaN as None for empty cells
+                df['Settled_At'] = pd.to_datetime(df['Settled_At'], errors='coerce')
+                # Replace NaT (Not a Time) with None for cleaner display
+                df['Settled_At'] = df['Settled_At'].where(pd.notna(df['Settled_At']), None)
+            
+            # Save to Excel with datetime format
+            with pd.ExcelWriter(self.excel_path, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Sheet1')
+                # Get the worksheet to set column width for datetime columns
+                worksheet = writer.sheets['Sheet1']
+                if 'Bet_Time' in df.columns:
+                    # Set column width for Bet_Time (column H)
+                    worksheet.column_dimensions['H'].width = 20
+                if 'Settled_At' in df.columns:
+                    # Set column width for Settled_At (column N)
+                    worksheet.column_dimensions['N'].width = 20
             
             logger.info(f"Bet record appended to Excel: {bet_record.get('Bet_ID', 'N/A')}")
             
@@ -96,8 +131,24 @@ class ExcelWriter:
                 if key in df.columns:
                     df.loc[mask, key] = value
             
-            # Save to Excel
-            df.to_excel(self.excel_path, index=False)
+            # Ensure datetime columns are properly formatted
+            if 'Bet_Time' in df.columns:
+                df['Bet_Time'] = pd.to_datetime(df['Bet_Time'], errors='coerce')
+            if 'Settled_At' in df.columns:
+                # Convert to datetime, but keep NaN as None for empty cells
+                df['Settled_At'] = pd.to_datetime(df['Settled_At'], errors='coerce')
+                # Replace NaT (Not a Time) with None for cleaner display
+                df['Settled_At'] = df['Settled_At'].where(pd.notna(df['Settled_At']), None)
+            
+            # Save to Excel with datetime format
+            with pd.ExcelWriter(self.excel_path, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Sheet1')
+                # Get the worksheet to set column width for datetime columns
+                worksheet = writer.sheets['Sheet1']
+                if 'Bet_Time' in df.columns:
+                    worksheet.column_dimensions['H'].width = 20
+                if 'Settled_At' in df.columns:
+                    worksheet.column_dimensions['N'].width = 20
             
             logger.info(f"Bet record updated in Excel: {bet_id}")
             

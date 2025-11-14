@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Betfair Italy Bot</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #ffffff;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            margin: 0;
+            padding: 0;
+        }
+        
+        /* Top Bar */
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            flex-shrink: 0; /* Don't shrink top bar */
+            height: 60px;
+        }
+        
+        .time {
+            font-size: 16px;
+            font-weight: 500;
+        }
+        
+        .status-icons {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        .status-icon {
+            width: 20px;
+            height: 20px;
+            background: #333;
+            border-radius: 50%;
+        }
+        
+        /* Main Container - 3 Column Layout */
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+            height: calc(100vh - 60px); /* Subtract bottom nav (60px) only */
+            min-height: 0; /* Important for flex children to respect height */
+        }
+        
+        /* Left Sidebar */
+        .left-sidebar {
+            width: 280px;
+            background: rgba(26, 26, 46, 0.8);
+            backdrop-filter: blur(10px);
+            border-right: 1px solid rgba(156, 39, 176, 0.2);
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            height: 100%;
+            overflow-y: auto;
+            overflow-x: hidden;
+            min-height: 0;
+        }
+        
+        /* User Profile Section */
+        .user-profile {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .greeting {
+            font-size: 18px;
+            margin-right: 5px;
+        }
+        
+        .avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #9c27b0;
+        }
+        
+        .user-info {
+            flex: 1;
+        }
+        
+        .user-name {
+            font-size: 18px;
+            font-weight: 600;
+            color: #ffffff;
+        }
+        
+        .notification-icon {
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            opacity: 0.7;
+        }
+        
+        /* Navigation Items */
+        .nav-items {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            background: rgba(26, 26, 38, 0.6);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 2px solid transparent;
+        }
+        
+        .nav-item.active {
+            background: rgba(156, 39, 176, 0.3);
+            border-color: #9c27b0;
+        }
+        
+        .nav-item:hover {
+            background: rgba(156, 39, 176, 0.2);
+        }
+        
+        .nav-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            background: #9c27b0;
+        }
+        
+        .nav-item:not(.active) .nav-icon {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .nav-label {
+            font-size: 14px;
+            font-weight: 500;
+            color: #ffffff;
+        }
+        
+        /* Center Content - Live Match */
+        .center-content {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.2);
+            height: 100%;
+            min-height: 0;
+        }
+        
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .section-title {
+            font-size: 24px;
+            font-weight: 700;
+        }
+        
+        .notification-icon-header {
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            opacity: 0.7;
+            transition: opacity 0.3s;
+        }
+        
+        .notification-icon-header:hover {
+            opacity: 1;
+        }
+        
+        .match-card {
+            background: linear-gradient(135deg, rgba(156, 39, 176, 0.2) 0%, rgba(26, 26, 38, 0.8) 100%);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            border: 1px solid rgba(156, 39, 176, 0.3);
+            transition: all 0.3s;
+        }
+        
+        .match-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(156, 39, 176, 0.3);
+        }
+        
+        .team {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .team-logo {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 600;
+            color: #fff;
+            border: 2px solid rgba(156, 39, 176, 0.5);
+        }
+        
+        .team-name {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .match-center {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            min-width: 120px;
+        }
+        
+        .live-badge {
+            background: #f44336;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .live-badge::before {
+            content: '●';
+            font-size: 8px;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .match-period {
+            font-size: 12px;
+            color: #aaa;
+        }
+        
+        .match-time {
+            font-size: 12px;
+            color: #aaa;
+        }
+        
+        .match-score {
+            font-size: 28px;
+            font-weight: 700;
+            color: #fff;
+        }
+        
+        /* Right Sidebar - Log Terminal */
+        .right-sidebar {
+            width: 400px;
+            background: rgba(10, 10, 10, 0.9);
+            border-left: 1px solid rgba(156, 39, 176, 0.2);
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            min-height: 0;
+        }
+        
+        .log-header {
+            padding: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0; /* Don't shrink header */
+        }
+        
+        .log-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        .log-container {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            min-height: 0; /* Important for flex children */
+        }
+        
+        .log-line {
+            margin-bottom: 4px;
+            word-wrap: break-word;
+            color: #00ff00;
+        }
+        
+        .log-line.error {
+            color: #ff4444;
+        }
+        
+        .log-line.warning {
+            color: #ffaa00;
+        }
+        
+        .log-line.info {
+            color: #00aaff;
+        }
+        
+        .log-line.debug {
+            color: #888888;
+        }
+        
+        /* Bottom Navigation */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(26, 26, 38, 0.95);
+            backdrop-filter: blur(10px);
+            display: flex;
+            justify-content: space-around;
+            padding: 10px 0;
+            border-top: 1px solid rgba(156, 39, 176, 0.3);
+            z-index: 1000;
+            height: 60px;
+            flex-shrink: 0;
+        }
+        
+        .nav-icon-bottom {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .nav-icon-bottom.active {
+            background: #9c27b0;
+        }
+        
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .right-sidebar {
+                width: 300px;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .main-container {
+                flex-direction: column;
+            }
+            
+            .left-sidebar {
+                width: 100%;
+                max-height: 200px;
+            }
+            
+            .right-sidebar {
+                width: 100%;
+                max-height: 300px;
+            }
+        }
+        
+        /* Scrollbar styling */
+        .log-container::-webkit-scrollbar,
+        .center-content::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .log-container::-webkit-scrollbar-track,
+        .center-content::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.3);
+        }
+        
+        .log-container::-webkit-scrollbar-thumb,
+        .center-content::-webkit-scrollbar-thumb {
+            background: rgba(156, 39, 176, 0.5);
+            border-radius: 4px;
+        }
+        
+        .log-container::-webkit-scrollbar-thumb:hover,
+        .center-content::-webkit-scrollbar-thumb:hover {
+            background: rgba(156, 39, 176, 0.7);
+        }
+    </style>
+</head>
+<body>
+    <!-- Top Bar - Hidden -->
+    <div class="top-bar" style="display: none;">
+    </div>
+    
+    <!-- Main Container -->
+    <div class="main-container">
+        <!-- Left Sidebar -->
+        <div class="left-sidebar">
+            <!-- User Profile -->
+            <div class="user-profile">
+                <img src="https://jbagy.me/wp-content/uploads/2025/03/anh-logo-avatar-bong-da-1.jpg" 
+                     alt="Avatar" class="avatar" 
+                     onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2250%22 height=%2250%22%3E%3Ccircle cx=%2225%22 cy=%2225%22 r=%2225%22 fill=%22%239c27b0%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22white%22 font-size=%2220%22%3EAN%3C/text%3E%3C/svg%3E'">
+                <div class="user-info">
+                    <div class="user-name">Andrea Natali</div>
+                </div>
+                <svg class="notification-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+                </svg>
+            </div>
+            
+            <!-- Navigation Items -->
+            <div class="nav-items">
+                <div class="nav-item" onclick="showBalance()">
+                    <div class="nav-icon">💰</div>
+                    <span class="nav-label" id="balanceLabel">Loading...</span>
+                </div>
+                <div class="nav-item" onclick="showCompetitions()">
+                    <div class="nav-icon">🏆</div>
+                    <span class="nav-label">Competitions</span>
+                </div>
+                <div class="nav-item" id="botControlItem" onclick="toggleBot()">
+                    <div class="nav-icon" id="botControlIcon">▶</div>
+                    <span class="nav-label" id="botControlLabel">Start Bot</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Center Content - Live Match -->
+        <div class="center-content">
+            <div class="section-header">
+                <h2 class="section-title">Live Match</h2>
+                <svg class="notification-icon-header" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+                </svg>
+            </div>
+            
+            <div id="liveMatches">
+                <!-- Matches will be loaded here -->
+                <div class="match-card">
+                    <div class="team">
+                        <div class="team-logo">BM</div>
+                        <div class="team-name">Loading...</div>
+                    </div>
+                    <div class="match-center">
+                        <span class="live-badge">LIVE</span>
+                        <span class="match-period">1ST</span>
+                        <span class="match-time">--:--</span>
+                        <div class="match-score">-:-</div>
+                    </div>
+                    <div class="team" style="justify-content: flex-end;">
+                        <div class="team-name" style="text-align: right;">Loading...</div>
+                        <div class="team-logo">CF</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Right Sidebar - Log Terminal -->
+        <div class="right-sidebar">
+            <div class="log-header">
+                <h3 class="log-title">Terminal Log</h3>
+                <button onclick="clearLogs()" style="background: rgba(156, 39, 176, 0.3); border: 1px solid #9c27b0; color: #fff; padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 12px;">Clear</button>
+            </div>
+            <div class="log-container" id="logContainer">
+                <div class="log-line">Loading logs...</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Bottom Navigation -->
+    <div class="bottom-nav">
+        <div class="nav-icon-bottom active">🏠</div>
+        <div class="nav-icon-bottom">▶</div>
+        <div class="nav-icon-bottom">📊</div>
+        <div class="nav-icon-bottom">👤</div>
+        <div class="nav-icon-bottom">⚙️</div>
+    </div>
+    
+    <script>
+        
+        // Navigation functions
+        function showBalance() {
+            document.querySelectorAll('.nav-item').forEach(item => {
+                if (item.id !== 'botControlItem') {
+                    item.classList.remove('active');
+                }
+            });
+            event.currentTarget.classList.add('active');
+        }
+        
+        function showCompetitions() {
+            document.querySelectorAll('.nav-item').forEach(item => {
+                if (item.id !== 'botControlItem') {
+                    item.classList.remove('active');
+                }
+            });
+            event.currentTarget.classList.add('active');
+        }
+        
+        // Bot control functions
+        function toggleBot() {
+            fetch('/api/status')
+                .then(response => response.json())
+                .then(data => {
+                    const isRunning = data.is_running || data.state === 'running' || data.state === 'starting';
+                    if (isRunning) {
+                        stopBot();
+                    } else {
+                        startBot();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking status:', error);
+                    startBot();
+                });
+        }
+        
+        function startBot() {
+            fetch('/api/start', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        updateStatus();
+                        loadLogs(); // Refresh logs
+                    } else {
+                        alert('Failed to start bot: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    alert('Error starting bot: ' + error.message);
+                });
+        }
+        
+        function stopBot() {
+            // Disable button to prevent multiple clicks
+            const botControlItem = document.getElementById('botControlItem');
+            const botControlLabel = document.getElementById('botControlLabel');
+            if (botControlItem) {
+                botControlItem.style.pointerEvents = 'none';
+                botControlLabel.textContent = 'Stopping...';
+            }
+            
+            fetch('/api/stop', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        updateStatus();
+                        loadLogs(); // Refresh logs
+                    } else {
+                        alert('Failed to stop bot: ' + data.message);
+                        // Re-enable button if failed
+                        if (botControlItem) {
+                            botControlItem.style.pointerEvents = 'auto';
+                        }
+                    }
+                })
+                .catch(error => {
+                    alert('Error stopping bot: ' + error.message);
+                    // Re-enable button if error
+                    if (botControlItem) {
+                        botControlItem.style.pointerEvents = 'auto';
+                    }
+                });
+        }
+        
+        // Load account balance
+        function loadBalance() {
+            fetch('/api/account-balance')
+                .then(response => response.json())
+                .then(data => {
+                    const balanceLabel = document.getElementById('balanceLabel');
+                    if (data.success && data.balance !== null) {
+                        balanceLabel.textContent = data.formatted || `${data.balance.toFixed(2)} EUR`;
+                    } else {
+                        balanceLabel.textContent = 'N/A';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading balance:', error);
+                    document.getElementById('balanceLabel').textContent = 'Error';
+                });
+        }
+        
+        // Update bot status
+        function updateStatus() {
+            fetch('/api/status')
+                .then(response => response.json())
+                .then(data => {
+                    const botControlItem = document.getElementById('botControlItem');
+                    const botControlIcon = document.getElementById('botControlIcon');
+                    const botControlLabel = document.getElementById('botControlLabel');
+                    
+                    const isRunning = data.is_running || data.state === 'running' || data.state === 'starting';
+                    
+                    if (isRunning) {
+                        botControlItem.classList.add('active');
+                        botControlIcon.textContent = '⏹';
+                        botControlLabel.textContent = 'Stop Bot';
+                        botControlItem.style.pointerEvents = 'auto'; // Re-enable if running
+                    } else {
+                        botControlItem.classList.remove('active');
+                        botControlIcon.textContent = '▶';
+                        botControlLabel.textContent = 'Start Bot';
+                        botControlItem.style.pointerEvents = 'auto'; // Re-enable if stopped
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching status:', error);
+                });
+        }
+        
+        // Load logs (streaming - only new lines)
+        function loadLogs() {
+            fetch('/api/logs')
+                .then(response => response.json())
+                .then(data => {
+                    const logContainer = document.getElementById('logContainer');
+                    if (data.success && data.logs && data.logs.length > 0) {
+                        // Append new logs
+                        data.logs.forEach(log => {
+                            let className = 'log-line';
+                            const logUpper = log.toUpperCase();
+                            if (logUpper.includes('ERROR')) {
+                                className += ' error';
+                            } else if (logUpper.includes('WARNING')) {
+                                className += ' warning';
+                            } else if (logUpper.includes('INFO')) {
+                                className += ' info';
+                            } else if (logUpper.includes('DEBUG')) {
+                                className += ' debug';
+                            }
+                            
+                            const logDiv = document.createElement('div');
+                            logDiv.className = className;
+                            logDiv.textContent = log;
+                            logContainer.appendChild(logDiv);
+                        });
+                        
+                        // Auto scroll to bottom
+                        logContainer.scrollTop = logContainer.scrollHeight;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading logs:', error);
+                });
+        }
+        
+        // Initial load - start fresh, don't load old logs
+        function loadInitialLogs() {
+            // Reset log position to current end of file (don't load old logs)
+            fetch('/api/logs/reset', { method: 'POST' })
+                .then(() => {
+                    // Set position to end of file so we only get new logs
+                    fetch('/api/logs')
+                        .then(response => response.json())
+                        .then(data => {
+                            const logContainer = document.getElementById('logContainer');
+                            // Don't load existing logs, just set position
+                            // Only show message that we're ready to receive new logs
+                            logContainer.innerHTML = '<div class="log-line">Waiting for bot to start...</div>';
+                        });
+                })
+                .catch(error => {
+                    console.error('Error resetting logs:', error);
+                    document.getElementById('logContainer').innerHTML = '<div class="log-line">Ready for logs</div>';
+                });
+        }
+        
+        function clearLogs() {
+            const logContainer = document.getElementById('logContainer');
+            logContainer.innerHTML = '<div class="log-line">Logs cleared</div>';
+            // Reset position on server
+            fetch('/api/logs/reset', { method: 'POST' })
+                .catch(error => console.error('Error resetting log position:', error));
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Load live matches
+        function loadLiveMatches() {
+            fetch('/api/matches')
+                .then(response => response.json())
+                .then(data => {
+                    const matchesContainer = document.getElementById('liveMatches');
+                    const matches = data.matches || [];
+                    
+                    if (matches.length === 0) {
+                        matchesContainer.innerHTML = `
+                            <div class="match-card">
+                                <div style="text-align: center; width: 100%; color: #aaa; padding: 20px;">
+                                    No live matches at the moment
+                                </div>
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    matchesContainer.innerHTML = matches.map(match => {
+                        const teams = match.betfair_event_name ? match.betfair_event_name.split(' v ') : ['Team 1', 'Team 2'];
+                        const team1 = teams[0] || 'Team 1';
+                        const team2 = teams[1] || 'Team 2';
+                        const score = match.current_score || '0-0';
+                        const minute = match.current_minute || 0;
+                        const period = minute <= 45 ? '1ST' : minute <= 90 ? '2ND' : 'ET';
+                        const timeDisplay = `${Math.floor(minute / 60)}:${(minute % 60).toString().padStart(2, '0')}`;
+                        
+                        return `
+                            <div class="match-card">
+                                <div class="team">
+                                    <div class="team-logo">${team1.substring(0, 2).toUpperCase()}</div>
+                                    <div class="team-name">${team1}</div>
+                                </div>
+                                <div class="match-center">
+                                    <span class="live-badge">LIVE</span>
+                                    <span class="match-period">${period}</span>
+                                    <span class="match-time">${timeDisplay}</span>
+                                    <div class="match-score">${score}</div>
+                                </div>
+                                <div class="team" style="justify-content: flex-end;">
+                                    <div class="team-name" style="text-align: right;">${team2}</div>
+                                    <div class="team-logo">${team2.substring(0, 2).toUpperCase()}</div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                })
+                .catch(error => {
+                    console.error('Error loading matches:', error);
+                });
+        }
+        
+        // Initialize
+        loadBalance();
+        setInterval(loadBalance, 30000);
+        
+        updateStatus();
+        setInterval(updateStatus, 2000);
+        
+        loadLiveMatches();
+        setInterval(loadLiveMatches, 5000);
+        
+        // Load initial logs, then stream new ones
+        loadInitialLogs();
+        setInterval(loadLogs, 2000); // Check for new logs every 2 seconds
+    </script>
+</body>
+</html>

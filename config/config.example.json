@@ -76,6 +76,22 @@
     "_note": "Market stability check: spread ≤ max_spread_ticks, book percentage around 100% (market maturity), lay side depth. No matched percentage check as per client requirements.",
     "_note2": "stake_percent: percentage of balance to use as stake. max_liability: maximum liability cap (optional). ticks_offset: number of ticks to add to bestBack price for lay price."
   },
+  "test_mode": {
+    "_comment": "Test mode configuration - when enabled, bot will NOT place real bets",
+    "enabled": false,
+    "simulate_bet_placement": true,
+    "log_bet_details": true,
+    "mock_bet_id_prefix": "TEST_",
+    "mock_data": {
+      "_note": "Optional: Inject custom mock data for testing specific scenarios",
+      "live_matches": [],
+      "markets": [],
+      "market_books": {},
+      "match_details": {},
+      "account_balance": 1000.0
+    },
+    "_note": "When enabled: All API calls will be simulated. Bot will run all logic but NOT place real bets. Set 'enabled: true' to activate test mode."
+  },
   "notifications": {
     "_comment": "Notifications configuration for Milestone 4",
     "sound_enabled": true,

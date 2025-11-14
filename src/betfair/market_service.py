@@ -344,8 +344,8 @@ class MarketService:
             Account funds dictionary or None if error
         """
         try:
-            # Use account endpoint directly
-            account_endpoint = "https://api.betfair.com/exchange/account/rest/v1.0"
+            # Use account endpoint (from constructor or default)
+            account_endpoint = getattr(self, 'account_endpoint', "https://api.betfair.com/exchange/account/rest/v1.0")
             url = f"{account_endpoint}/getAccountFunds/"
             
             # Account API needs both headers for Italian Exchange

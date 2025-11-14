@@ -362,18 +362,32 @@ def main():
             print("✗ Failed to login after multiple attempts")
             return 1
         
+        # Initialize Service Factory (for test mode support)
+        from core.service_factory import ServiceFactory
+        service_factory = ServiceFactory(config)
+        
         # Initialize market service first (needed for callback)
         print("\n[Market Detection] Initializing market service...")
         # Get max data weight points from config (default 190)
         betfair_api_config = config.get("betfair_api", {})
         max_data_weight_points = betfair_api_config.get("max_data_weight_points", 190)
-        market_service = MarketService(
+        
+        # Use factory to create market service (real or mock)
+        market_service = service_factory.create_market_service(
             app_key=betfair_config["app_key"],
             session_token=session_token,
             api_endpoint=betfair_config["api_endpoint"],
-            max_data_weight_points=max_data_weight_points
+            account_endpoint=betfair_config.get("account_endpoint", "https://api.betfair.com/exchange/account/rest/v1.0")
         )
-        print("✓ Market service initialized")
+        
+        # Set max_data_weight_points for real MarketService (mock service doesn't need it)
+        if not service_factory.is_test_mode and hasattr(market_service, 'max_data_weight_points'):
+            market_service.max_data_weight_points = max_data_weight_points
+        
+        if service_factory.is_test_mode:
+            print("✓ Market service initialized (TEST MODE)")
+        else:
+            print("✓ Market service initialized")
         
         # Initialize keep-alive (callback will be set after creation)
         print("\n[5/6] Starting keep-alive manager...")
@@ -436,10 +450,11 @@ def main():
             else:
                 logger.info(f"Using rate limit from config: {rate_limit}/day")
             
-            live_score_client = LiveScoreClient(
+            # Use factory to create Live Score client (real or mock)
+            live_score_client = service_factory.create_live_score_client(
                 api_key=live_score_config.get("api_key", ""),
                 api_secret=live_score_config.get("api_secret", ""),
-                base_url=live_score_config.get("base_url", "https://live-score-api.com/api/v1"),
+                base_url=live_score_config.get("base_url", "https://livescore-api.com/api-client"),
                 rate_limit_per_day=rate_limit
             )
             match_matcher = MatchMatcher()
@@ -503,15 +518,20 @@ def main():
         bet_execution_config = config.get("bet_execution", {})
         if bet_execution_config:
             betfair_config = config.get("betfair", {})
-            betting_service = BettingService(
+            # Use factory to create betting service (real or mock)
+            betting_service = service_factory.create_betting_service(
                 app_key=betfair_config.get("app_key", ""),
                 session_token=session_token,
                 api_endpoint=betfair_config.get("api_endpoint", "")
             )
             # Note: Token will be updated automatically when session expires and re-login happens
             # via handle_session_expired callback (line 219-235)
-            logger.info("Betting service initialized")
-            print("✓ Betting service initialized (Milestone 3)")
+            if service_factory.is_test_mode:
+                logger.info("Betting service initialized (TEST MODE)")
+                print("✓ Betting service initialized (TEST MODE)")
+            else:
+                logger.info("Betting service initialized")
+                print("✓ Betting service initialized (Milestone 3)")
         
         # Initialize Sound Notifier (Milestone 4)
         sound_notifier = None
@@ -612,6 +632,17 @@ def main():
         logger.info(f"Live Score API polling interval: {live_api_polling_interval}s")
         
         while True:
+            # Check if stop was requested from web interface
+            try:
+                from web.shared_state import should_stop
+                if should_stop():
+                    logger.info("Stop requested from web interface")
+                    print("\n\nStop requested from web interface. Shutting down...")
+                    break
+            except ImportError:
+                # If web interface not used, ignore
+                pass
+            
             iteration += 1
             logger.debug(f"--- Detection iteration #{iteration} ---")
             
@@ -779,10 +810,12 @@ def main():
                                     
                                     # Milestone 3: Execute lay bet if conditions are met
                                     # Check both when state changes to READY_FOR_BET and on subsequent updates
+                                    # Only attempt if bet not placed and not already skipped
                                     if (tracker.state == MatchState.READY_FOR_BET and 
                                         betting_service and 
                                         tracker.current_minute >= 75 and 
-                                        not tracker.bet_placed):
+                                        not tracker.bet_placed and
+                                        not getattr(tracker, 'bet_skipped', False)):
                                         match_tracking_config = config.get("match_tracking", {})
                                         target_over = match_tracking_config.get("target_over", 2.5)
                                         
@@ -852,7 +885,10 @@ def main():
                                                 
                                                 logger.info(f"Bet matched immediately: BetId={bet_result.get('betId')}, SizeMatched={size_matched}")
                                         else:
-                                            # Record skipped match
+                                            # Mark as skipped to prevent retry
+                                            tracker.bet_skipped = True
+                                            
+                                            # Record skipped match (only once)
                                             logger.warning(f"Failed to place bet for {tracker.betfair_event_name}")
                                             print(f"  ⚠ Could not place bet for {tracker.betfair_event_name}")
                                             
@@ -910,12 +946,17 @@ def main():
                                     target_over = match_tracking_config.get("target_over", None)
                                     early_discard_enabled = match_tracking_config.get("early_discard_enabled", True)
                                     
+                                    # Get competition name from Live API (for Excel matching)
+                                    live_competition_name = parse_match_competition(live_match)
+                                    # Use Live API competition name if available, otherwise fallback to Betfair
+                                    tracker_competition_name = live_competition_name if live_competition_name else competition_name
+                                    
                                     # Create tracker
                                     tracker = MatchTracker(
                                         betfair_event_id=event_id,
                                         betfair_event_name=betfair_event.get("name", "N/A"),
                                         live_match_id=live_match_id,
-                                        competition_name=competition_name,
+                                        competition_name=tracker_competition_name,
                                         start_minute=start_minute,
                                         end_minute=end_minute,
                                         zero_zero_exception_competitions=zero_zero_exception_competitions,
@@ -1004,9 +1045,21 @@ def main():
                 # Reset error counter on success
                 consecutive_errors = 0
                 
-                # Wait before next iteration
+                # Wait before next iteration (check stop event during sleep)
                 try:
-                    time.sleep(polling_interval)
+                    # Sleep in small chunks to check stop event more frequently
+                    sleep_chunks = max(1, int(polling_interval / 2))  # Check every 0.5s or 1s
+                    for _ in range(sleep_chunks):
+                        time.sleep(polling_interval / sleep_chunks)
+                        # Check stop event during sleep
+                        try:
+                            from web.shared_state import should_stop
+                            if should_stop():
+                                logger.info("Stop requested from web interface during sleep")
+                                print("\n\nStop requested from web interface. Shutting down...")
+                                raise KeyboardInterrupt  # Break out of sleep and loop
+                        except ImportError:
+                            pass
                 except KeyboardInterrupt:
                     logger.info("Interrupted by user during polling wait")
                     print("\n\nStopping...")

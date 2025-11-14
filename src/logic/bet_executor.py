@@ -112,6 +112,89 @@ def find_over_market(market_service: MarketService, event_id: str,
         return None
 
 
+def find_under_market(market_service: MarketService, event_id: str, 
+                     target_over: float) -> Optional[Dict[str, Any]]:
+    """
+    Find Under X.5 market for an event (same market as Over X.5, different selection)
+    
+    Args:
+        market_service: MarketService instance
+        event_id: Betfair event ID
+        target_over: Target Over value (e.g., 2.5) - same market, Under X.5 selection
+    
+    Returns:
+        {
+            "marketId": "1.xxxxx",
+            "selectionId": 12346,
+            "marketName": "Over/Under 2.5 Goals",
+            "runnerName": "Under 2.5 Goals"
+        } or None if not found
+    """
+    try:
+        # Get market type code for target_over (same as Over X.5)
+        market_type_code = TARGET_OVER_TO_MARKET_TYPE.get(target_over)
+        if not market_type_code:
+            logger.warning(f"No market type code for target_over {target_over}")
+            return None
+        
+        # Get markets for this event
+        markets = market_service.list_market_catalogue(
+            event_type_ids=[1],  # Football
+            competition_ids=[],
+            in_play_only=True,
+            market_type_codes=[market_type_code],
+            max_results=100
+        )
+        
+        # Find market for this specific event
+        for market in markets:
+            market_event = market.get("event", {})
+            if market_event.get("id") == event_id:
+                market_name = market.get("marketName", "")
+                
+                # Check if market name contains Over/Under
+                if "over" in market_name.lower() and "under" in market_name.lower():
+                    # Find runner "Under X.5"
+                    runners = market.get("runners", [])
+                    for runner in runners:
+                        runner_name = runner.get("runnerName", "")
+                        # Check if runner name contains "Under" and the target number
+                        if "under" in runner_name.lower():
+                            # Extract number from runner name (e.g., "Under 2.5 Goals" -> 2.5)
+                            import re
+                            numbers = re.findall(r'\d+\.?\d*', runner_name)
+                            for num_str in numbers:
+                                try:
+                                    num = float(num_str)
+                                    if abs(num - target_over) < 0.1:  # Allow small difference
+                                        return {
+                                            "marketId": market.get("marketId"),
+                                            "selectionId": runner.get("selectionId"),
+                                            "marketName": market_name,
+                                            "runnerName": runner_name
+                                        }
+                                except ValueError:
+                                    continue
+                    
+                    # If exact match not found, try to find any "Under" runner
+                    for runner in runners:
+                        runner_name = runner.get("runnerName", "")
+                        if "under" in runner_name.lower() and str(int(target_over)) in runner_name:
+                            return {
+                                "marketId": market.get("marketId"),
+                                "selectionId": runner.get("selectionId"),
+                                "marketName": market_name,
+                                "runnerName": runner_name
+                            }
+        
+        logger.debug(f"Under {target_over} market not found for event {event_id}")
+        return None
+        
+    except Exception as e:
+        logger.error(f"Error finding under market: {str(e)}")
+        return None
+
+
 def get_market_book_data(market_service: MarketService, market_id: str, 
                         selection_id: int) -> Optional[Dict[str, Any]]:
     """
@@ -213,13 +296,20 @@ def check_market_conditions(market_data: Dict[str, Any],
     
     Requirements (per client - Andrea):
     - Market must be stable (mature market with balanced prices)
-    - Check LAY side of Under X.5 selection (not back side, not entire market)
+    - Odds check must be performed on best back price of Under X.5
+    - Lay bet must be placed on Over X.5
+    - Spread check: Over X.5 best lay - Over X.5 best back (in same market)
     - Book percentage around 100% on lay side (market is mature/balanced)
     - Spread never exceeds max_spread_ticks
     - NO matched percentage check (client explicitly doesn't want this)
     
     Args:
-        market_data: Market book data from get_market_book_data
+        market_data: Market book data containing:
+            - bestBackPrice: Over X.5 best back (for spread calculation)
+            - bestLayPrice: Over X.5 best lay (for spread calculation)
+            - underBestBack: Under X.5 best back (for odds check)
+            - laySize: Over X.5 lay size
+            - totalLaySize: Over X.5 total lay size
         min_odds: Minimum odds threshold
         max_odds: Maximum odds threshold
         max_spread_ticks: Maximum allowed spread in ticks
@@ -228,18 +318,28 @@ def check_market_conditions(market_data: Dict[str, Any],
     Returns:
         (is_valid, reason)
     """
-    best_back = market_data.get("bestBackPrice")
-    best_lay = market_data.get("bestLayPrice")
-    lay_size = market_data.get("laySize", 0.0)  # Size at best lay price
-    total_lay_size = market_data.get("totalLaySize", 0.0)  # Total size on lay side
+    # Get Over X.5 prices (for spread calculation)
+    over_best_back = market_data.get("bestBackPrice")  # Over X.5 best back
+    over_best_lay = market_data.get("bestLayPrice")  # Over X.5 best lay
+    lay_size = market_data.get("laySize", 0.0)  # Size at best lay price (Over X.5)
+    total_lay_size = market_data.get("totalLaySize", 0.0)  # Total size on lay side (Over X.5)
     
-    # Check 1: Odds threshold (check LAY side as per requirements)
-    if best_lay < min_odds or best_lay > max_odds:
-        return False, f"Lay odds {best_lay} outside range [{min_odds}, {max_odds}]"
+    # Get Under X.5 best back (for odds check)
+    under_best_back = market_data.get("underBestBack")
+    
+    # Check 1: Odds threshold (check best back price of Under X.5 as per client requirement)
+    if under_best_back is None:
+        return False, "Under X.5 best back price not available"
+    if under_best_back < min_odds or under_best_back > max_odds:
+        return False, f"Under X.5 best back price {under_best_back} outside range [{min_odds}, {max_odds}]"
     
     # Check 2: Spread ≤ max_spread_ticks (critical requirement)
-    spread = best_lay - best_back
-    ticks = calculate_ticks_between(best_back, best_lay, ladder_type)
+    # Spread is calculated from Over X.5 best back to Over X.5 best lay (same market)
+    if over_best_back is None or over_best_lay is None:
+        return False, "Over X.5 prices not available for spread calculation"
+    
+    spread = over_best_lay - over_best_back
+    ticks = calculate_ticks_between(over_best_back, over_best_lay, ladder_type)
     
     if ticks > max_spread_ticks:
         return False, f"Spread {spread} ({ticks} ticks) exceeds maximum {max_spread_ticks} ticks"
@@ -378,14 +478,18 @@ def get_stake_from_excel(competition_name: str, score: str, excel_path: str,
             ]
         
         if matches.empty:
-            logger.debug(f"No competition match found for: {competition_name} (normalized: {normalized_competition})")
+            logger.warning(f"No competition match found for: {competition_name} (normalized: {normalized_competition})")
+            logger.debug(f"Available competitions in Excel: {df['Competition-Live'].unique().tolist() if has_competition_live else df['Competition'].unique().tolist()}")
             return None
+        
+        logger.debug(f"Found {len(matches)} competition match(es) for '{competition_name}'. Available Results: {matches['Result'].astype(str).str.strip().unique().tolist()}")
         
         # Filter by score
         score_matches = matches[matches['Result'].astype(str).str.strip() == score_normalized]
         
         if score_matches.empty:
-            logger.debug(f"Score {score_normalized} not found in Excel for competition {competition_name}")
+            logger.warning(f"Score {score_normalized} not found in Excel for competition {competition_name}")
+            logger.debug(f"Available Results for this competition: {matches['Result'].astype(str).str.strip().unique().tolist()}")
             return None
         
         # If multiple matches and Competition-Betfair is available, use it to disambiguate
@@ -526,9 +630,46 @@ def execute_lay_bet(market_service: MarketService, betting_service: BettingServi
     """
     logger.info(f"Executing lay bet for {event_name} (Over {target_over})")
     
-    # Phase 1: Find Over X.5 market
-    market_info = find_over_market(market_service, event_id, target_over)
-    if not market_info:
+    # Phase 1: Find Under X.5 market (for odds check - best back price)
+    under_market_info = find_under_market(market_service, event_id, target_over)
+    if not under_market_info:
+        logger.warning(f"Under {target_over} market not found for {event_name}")
+        return {
+            "success": False,
+            "reason": f"Under {target_over} market not found",
+            "skip_reason": "Market unavailable"
+        }
+    
+    under_market_id = under_market_info["marketId"]
+    under_selection_id = under_market_info["selectionId"]
+    under_market_name = under_market_info["marketName"]
+    under_runner_name = under_market_info["runnerName"]
+    
+    logger.info(f"Found Under market: {under_market_name} (marketId: {under_market_id}, selectionId: {under_selection_id})")
+    
+    # Phase 2: Get market book data for Under X.5 (to check best back price)
+    under_market_data = get_market_book_data(market_service, under_market_id, under_selection_id)
+    if not under_market_data:
+        logger.warning(f"Could not get market book data for Under {under_market_name}")
+        return {
+            "success": False,
+            "reason": "Could not get market book data for Under X.5",
+            "skip_reason": "Market closed or unavailable",
+            "bestBackPrice": None,
+            "bestLayPrice": None,
+            "spread_ticks": None
+        }
+    
+    # Get best back price from Under X.5 (this is what we check)
+    under_best_back = under_market_data["bestBackPrice"]
+    under_best_lay = under_market_data["bestLayPrice"]
+    under_market_status = under_market_data.get("status", "UNKNOWN")
+    
+    logger.info(f"Under {target_over} prices: Back={under_best_back}, Lay={under_best_lay}")
+    
+    # Phase 3: Find Over X.5 market (for lay bet placement)
+    over_market_info = find_over_market(market_service, event_id, target_over)
+    if not over_market_info:
         logger.warning(f"Over {target_over} market not found for {event_name}")
         return {
             "success": False,
@@ -536,47 +677,60 @@ def execute_lay_bet(market_service: MarketService, betting_service: BettingServi
             "skip_reason": "Market unavailable"
         }
     
-    market_id = market_info["marketId"]
-    selection_id = market_info["selectionId"]
-    market_name = market_info["marketName"]
-    runner_name = market_info["runnerName"]
+    over_market_id = over_market_info["marketId"]
+    over_selection_id = over_market_info["selectionId"]
+    over_market_name = over_market_info["marketName"]
+    over_runner_name = over_market_info["runnerName"]
     
-    logger.info(f"Found market: {market_name} (marketId: {market_id}, selectionId: {selection_id})")
+    logger.info(f"Found Over market: {over_market_name} (marketId: {over_market_id}, selectionId: {over_selection_id})")
     
-    # Phase 2: Get market book data
-    market_data = get_market_book_data(market_service, market_id, selection_id)
-    if not market_data:
-        logger.warning(f"Could not get market book data for {market_name}")
+    # Phase 4: Get market book data for Over X.5 (for lay bet placement)
+    over_market_data = get_market_book_data(market_service, over_market_id, over_selection_id)
+    if not over_market_data:
+        logger.warning(f"Could not get market book data for Over {over_market_name}")
         return {
             "success": False,
-            "reason": "Could not get market book data",
+            "reason": "Could not get market book data for Over X.5",
             "skip_reason": "Market closed or unavailable",
-            "bestBackPrice": None,
+            "bestBackPrice": under_best_back,
             "bestLayPrice": None,
             "spread_ticks": None
         }
     
-    best_back = market_data["bestBackPrice"]
-    best_lay = market_data["bestLayPrice"]
-    lay_size = market_data.get("laySize", 0.0)
-    total_lay_size = market_data.get("totalLaySize", 0.0)
-    market_status = market_data.get("status", "UNKNOWN")
+    over_best_back = over_market_data["bestBackPrice"]
+    over_best_lay = over_market_data["bestLayPrice"]
+    over_lay_size = over_market_data.get("laySize", 0.0)
+    over_total_lay_size = over_market_data.get("totalLaySize", 0.0)
     
-    logger.info(f"Market prices: Back={best_back}, Lay={best_lay}")
-    logger.info(f"Lay side depth: best price size={lay_size}, total size={total_lay_size}")
+    logger.info(f"Over {target_over} prices: Back={over_best_back}, Lay={over_best_lay}")
+    logger.info(f"Over lay side depth: best price size={over_lay_size}, total size={over_total_lay_size}")
     
-    # Phase 3: Check market conditions (market stability check)
+    # Phase 5: Check market conditions
+    # Per client requirement:
+    # - Odds check: Under X.5 best back price
+    # - Spread check: Over X.5 best lay - Over X.5 best back (in same market)
     min_odds = bet_config.get("min_odds", 1.5)
     max_odds = bet_config.get("max_odds", 10.0)
     max_spread_ticks = bet_config.get("max_spread_ticks", 4)
     ladder_type = bet_config.get("price_ladder_type", "CLASSIC")
     
+    # Create market data dict for check_market_conditions
+    # Use Over X.5 back and lay for spread calculation (same market)
+    # Use Under X.5 back for odds check (separate check)
+    check_market_data = {
+        "bestBackPrice": over_best_back,  # Over X.5 best back (for spread calculation)
+        "bestLayPrice": over_best_lay,  # Over X.5 best lay (for spread calculation)
+        "laySize": over_lay_size,  # Use Over X.5 lay size
+        "totalLaySize": over_total_lay_size,  # Use Over X.5 total lay size
+        "underBestBack": under_best_back  # Under X.5 best back (for odds check)
+    }
+    
     is_valid, reason = check_market_conditions(
-        market_data, min_odds, max_odds, max_spread_ticks, ladder_type
+        check_market_data, min_odds, max_odds, max_spread_ticks, ladder_type
     )
     
-    # Calculate spread in ticks for skipped matches
-    spread_ticks = calculate_ticks_between(best_back, best_lay, ladder_type) if best_back and best_lay else None
+    # Calculate spread in ticks for skipped matches (Over X.5 best lay - Over X.5 best back)
+    spread_ticks = calculate_ticks_between(over_best_back, over_best_lay, ladder_type) if over_best_back and over_best_lay else None
     
     if not is_valid:
         logger.warning(f"Market conditions not met: {reason}")
@@ -584,21 +738,21 @@ def execute_lay_bet(market_service: MarketService, betting_service: BettingServi
             "success": False,
             "reason": reason,
             "skip_reason": "Market conditions not met",
-            "bestBackPrice": best_back,
-            "bestLayPrice": best_lay,
+            "bestBackPrice": under_best_back,  # Under X.5 best back
+            "bestLayPrice": over_best_lay,  # Over X.5 best lay
             "spread_ticks": spread_ticks,
-            "marketStatus": market_status
+            "marketStatus": under_market_status
         }
     
-    logger.info(f"Market conditions OK: {reason}")
+    logger.info(f"Market conditions OK: {reason} (checked Under {target_over} best back: {under_best_back})")
     
-    # Phase 4: Calculate lay price (+2 ticks from best lay price)
+    # Phase 6: Calculate lay price for Over X.5 (+2 ticks from Over X.5 best lay price)
     ticks_offset = bet_config.get("ticks_offset", 2)
-    lay_price = calculate_lay_price(best_lay, ticks_offset, ladder_type)
+    lay_price = calculate_lay_price(over_best_lay, ticks_offset, ladder_type)
     
-    logger.info(f"Calculated lay price: {lay_price} (bestLay {best_lay} + {ticks_offset} ticks)")
+    logger.info(f"Calculated lay price for Over {target_over}: {lay_price} (bestLay {over_best_lay} + {ticks_offset} ticks)")
     
-    # Phase 5: Get stake from Excel and calculate stake/liability
+    # Phase 7: Get stake from Excel and calculate stake/liability
     # Step 5.1: Read stake percentage from Excel
     stake_percent = get_stake_from_excel(competition_name, current_score, excel_path)
     
@@ -609,8 +763,8 @@ def execute_lay_bet(market_service: MarketService, betting_service: BettingServi
             "success": False,
             "reason": f"Score {current_score} not found in Excel for {competition_name}",
             "skip_reason": "Score not in Excel targets",
-            "bestBackPrice": best_back,
-            "bestLayPrice": best_lay,
+            "bestBackPrice": under_best_back,  # Under X.5 best back
+            "bestLayPrice": over_best_lay,  # Over X.5 best lay
             "spread_ticks": spread_ticks,
             "competition": competition_name,
             "score": current_score
@@ -624,8 +778,8 @@ def execute_lay_bet(market_service: MarketService, betting_service: BettingServi
             "success": False,
             "reason": "Could not retrieve account funds",
             "skip_reason": "Account funds unavailable",
-            "bestBackPrice": best_back,
-            "bestLayPrice": best_lay,
+            "bestBackPrice": under_best_back,  # Under X.5 best back
+            "bestLayPrice": over_best_lay,  # Over X.5 best lay
             "spread_ticks": spread_ticks
         }
     
@@ -636,8 +790,8 @@ def execute_lay_bet(market_service: MarketService, betting_service: BettingServi
             "success": False,
             "reason": f"Insufficient balance: {available_balance}",
             "skip_reason": "Insufficient balance",
-            "bestBackPrice": best_back,
-            "bestLayPrice": best_lay,
+            "bestBackPrice": under_best_back,  # Under X.5 best back
+            "bestLayPrice": over_best_lay,  # Over X.5 best lay
             "spread_ticks": spread_ticks
         }
     
@@ -655,21 +809,21 @@ def execute_lay_bet(market_service: MarketService, betting_service: BettingServi
             "success": False,
             "reason": f"Insufficient funds: need {liability}, have {available_balance}",
             "skip_reason": "Insufficient funds for liability",
-            "bestBackPrice": best_back,
-            "bestLayPrice": best_lay,
+            "bestBackPrice": under_best_back,  # Under X.5 best back
+            "bestLayPrice": over_best_lay,  # Over X.5 best lay
             "spread_ticks": spread_ticks,
             "calculatedLayPrice": lay_price,
             "calculatedLiability": liability
         }
     
-    # Phase 6: Place bet
+    # Phase 8: Place lay bet on Over X.5
     persistence_type = bet_config.get("persistence_type", "LAPSE")
     
-    logger.info(f"Placing lay bet: Price={lay_price}, Size={stake}, Liability={liability}")
+    logger.info(f"Placing lay bet on Over {target_over}: Price={lay_price}, Size={stake}, Liability={liability}")
     
     bet_result = betting_service.place_lay_bet(
-        market_id=market_id,
-        selection_id=selection_id,
+        market_id=over_market_id,  # Use Over X.5 market ID
+        selection_id=over_selection_id,  # Use Over X.5 selection ID
         price=lay_price,
         size=stake,
         persistence_type=persistence_type
@@ -681,29 +835,29 @@ def execute_lay_bet(market_service: MarketService, betting_service: BettingServi
             "success": False,
             "reason": "Failed to place bet (API error)",
             "skip_reason": "Bet placement failed",
-            "bestBackPrice": best_back,
-            "bestLayPrice": best_lay,
+            "bestBackPrice": under_best_back,  # Under X.5 best back
+            "bestLayPrice": over_best_lay,  # Over X.5 best lay
             "spread_ticks": spread_ticks,
             "calculatedLayPrice": lay_price,
             "calculatedStake": stake,
             "calculatedLiability": liability
         }
     
-    # Phase 7: Return result
+    # Phase 9: Return result
     logger.info(f"Bet placed successfully: BetId={bet_result.get('betId')}")
     
     return {
         "success": True,
         "betId": bet_result.get("betId"),
-        "marketId": market_id,
-        "selectionId": selection_id,
-        "marketName": market_name,
-        "runnerName": runner_name,
+        "marketId": over_market_id,  # Over X.5 market ID
+        "selectionId": over_selection_id,  # Over X.5 selection ID
+        "marketName": over_market_name,  # Over X.5 market name
+        "runnerName": over_runner_name,  # Over X.5 runner name
         "stake": stake,
         "layPrice": lay_price,
         "liability": liability,
-        "bestBackPrice": best_back,
-        "bestLayPrice": best_lay,
+        "bestBackPrice": under_best_back,  # Under X.5 best back (used for odds check)
+        "bestLayPrice": over_best_lay,  # Over X.5 best lay (used for bet placement)
         "spread_ticks": spread_ticks,
         "orderStatus": bet_result.get("orderStatus"),
         "sizeMatched": bet_result.get("sizeMatched", 0.0),

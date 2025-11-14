@@ -21,3 +21,6 @@ openpyxl>=3.1.0
 # Sound notifications (Milestone 4)
 playsound3>=3.3.0
 
+# Web interface (Flask)
+Flask>=3.0.0
+

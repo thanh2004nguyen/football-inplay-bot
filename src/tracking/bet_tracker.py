@@ -73,13 +73,13 @@ class BetRecord:
             "Selection": self.selection,
             "Odds": self.odds,
             "Stake": self.stake,
-            "Bet_Time": self.bet_time.isoformat(),
+            "Bet_Time": self.bet_time,  # Keep as datetime object for Excel
             "Outcome": self.outcome or "Pending",
             "Profit_Loss": self.profit_loss if self.profit_loss is not None else 0.0,
             "Bankroll_Before": self.bankroll_before,
             "Bankroll_After": self.bankroll_after if self.bankroll_after is not None else self.bankroll_before,
             "Status": self.status,
-            "Settled_At": self.settled_at.isoformat() if self.settled_at else ""
+            "Settled_At": self.settled_at if self.settled_at else None  # Keep as datetime object or None
         }
 
 
@@ -134,6 +134,9 @@ class BetTracker:
         
         # Update bankroll (subtract stake)
         self.current_bankroll -= stake
+        
+        # Set bankroll_after immediately (bankroll after stake is deducted)
+        bet_record.bankroll_after = self.current_bankroll
         
         logger.info(f"Bet recorded: {bet_id}, Stake: {stake:.2f}, Bankroll: {bankroll_before:.2f} -> {self.current_bankroll:.2f}")
         

@@ -72,6 +72,7 @@ class MatchTracker:
         
         # Bet placement tracking (Milestone 3)
         self.bet_placed = False
+        self.bet_skipped = False  # Track if bet was skipped to prevent retry
         self.bet_id: Optional[str] = None
         
         logger.info(f"Match tracker created: {betfair_event_name} (Betfair ID: {betfair_event_id}, Live ID: {live_match_id})")
@@ -93,7 +94,7 @@ class MatchTracker:
         # Check for new goals
         current_goal_count = len([g for g in goals if not g.get('cancelled', False)])
         if current_goal_count > self.last_goal_count:
-            new_goals = current_goal_count - self.last_goal_count
+            new_goal_count = current_goal_count - self.last_goal_count
             logger.info(f"Match {self.betfair_event_name}: {new_goal_count} new goal(s) detected (total: {current_goal_count})")
             self.last_goal_count = current_goal_count
     

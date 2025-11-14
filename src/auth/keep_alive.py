@@ -51,7 +51,11 @@ class KeepAliveManager:
         """Stop keep-alive thread"""
         self.running = False
         if self.thread:
-            self.thread.join(timeout=5)
+            try:
+                self.thread.join(timeout=5)
+            except KeyboardInterrupt:
+                # Ignore KeyboardInterrupt during thread join
+                pass
         logger.info("Keep-alive stopped")
     
     def update_session_token(self, new_token: str):

@@ -95,7 +95,39 @@ pip install -r requirements.txt
 
 ## Running the Bot
 
-### Method 1: Using Command Line
+### Method 1: Using Web Interface (Recommended) 🌐
+
+The bot now includes a web interface that allows you to control it from your browser or phone!
+
+1. **Start the web interface:**
+   ```bash
+   # Windows
+   scripts\run_web.cmd
+   
+   # Or manually
+   .venv\Scripts\activate
+   python run_web.py
+   ```
+
+2. **Access the dashboard:**
+   - **On PC**: Open browser and go to `http://localhost:5000`
+   - **On Phone** (same Wi-Fi network): Open browser and go to `http://[PC-IP]:5000`
+     - The PC IP address will be displayed when you start the web interface
+     - Example: `http://192.168.1.100:5000`
+
+3. **Control the bot:**
+   - Click **"Start Bot"** to begin monitoring and betting
+   - Click **"Stop Bot"** to stop the bot gracefully
+   - View real-time status, uptime, matches tracked, and bets placed
+
+**Features:**
+- ✅ Start/Stop bot with one click
+- ✅ Real-time status updates
+- ✅ View active matches and bet history
+- ✅ Access from any device on your network (phone, tablet, etc.)
+- ✅ Beautiful, responsive interface
+
+### Method 2: Using Command Line
 
 1. Activate virtual environment:
    ```bash

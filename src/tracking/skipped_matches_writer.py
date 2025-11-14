@@ -55,6 +55,16 @@ class SkippedMatchesWriter:
                 ])
             
             # Prepare new row
+            timestamp = skipped_data.get("timestamp", datetime.now())
+            # Ensure timestamp is a datetime object, not string
+            if isinstance(timestamp, str):
+                try:
+                    timestamp = pd.to_datetime(timestamp)
+                except:
+                    timestamp = datetime.now()
+            elif not isinstance(timestamp, datetime):
+                timestamp = datetime.now()
+            
             new_row = {
                 "Match_Name": skipped_data.get("match_name", ""),
                 "Competition": skipped_data.get("competition", ""),
@@ -65,15 +75,25 @@ class SkippedMatchesWriter:
                 "BestLay": skipped_data.get("best_lay", 0.0),
                 "Spread_Ticks": skipped_data.get("spread_ticks", 0.0),
                 "Current_Odds": skipped_data.get("current_odds", 0.0),
-                "Timestamp": skipped_data.get("timestamp", datetime.now())
+                "Timestamp": timestamp  # Always datetime object
             }
             
             # Append new record
             new_df = pd.DataFrame([new_row])
             df = pd.concat([df, new_df], ignore_index=True)
             
-            # Save to Excel
-            df.to_excel(self.excel_path, index=False)
+            # Ensure Timestamp column is datetime
+            if 'Timestamp' in df.columns:
+                df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+            
+            # Save to Excel with datetime format
+            with pd.ExcelWriter(self.excel_path, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Sheet1')
+                # Get the worksheet to set column width for Timestamp
+                worksheet = writer.sheets['Sheet1']
+                if 'Timestamp' in df.columns:
+                    # Set column width for Timestamp (column J)
+                    worksheet.column_dimensions['J'].width = 20
             
             logger.info(f"Skipped match recorded: {skipped_data.get('match_name', 'N/A')} - {skipped_data.get('reason', 'N/A')}")
             
