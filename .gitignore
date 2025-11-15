@@ -54,6 +54,9 @@ config/config.json
 # Allow certificates directory structure (but not actual cert files)
 !certificates/
 !certificates/.gitkeep
+# Allow empty certificate template files
+!certificates/client-2048.crt
+!certificates/client-2048.key
 
 # OS
 .DS_Store
