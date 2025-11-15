@@ -34,8 +34,9 @@ env/
 *~
 
 # Environment variables
-.env
 .env.local
+# Allow empty .env file to be committed (for structure)
+!.env
 
 # Logs
 logs/
@@ -50,6 +51,9 @@ config/config.json
 *.pem
 *.p12
 *.pfx
+# Allow certificates directory structure (but not actual cert files)
+!certificates/
+!certificates/.gitkeep
 
 # OS
 .DS_Store
