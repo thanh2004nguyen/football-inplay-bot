@@ -6,7 +6,16 @@ import json
 import os
 from pathlib import Path
 from typing import Dict, Any
-from dotenv import load_dotenv
+
+# Optional: python-dotenv for .env file support
+try:
+    from dotenv import load_dotenv
+    HAS_DOTENV = True
+except ImportError:
+    HAS_DOTENV = False
+    # Define a dummy function if dotenv is not available
+    def load_dotenv(path):
+        pass
 
 
 def load_config(config_path: str = "config/config.json") -> Dict[str, Any]:
@@ -24,9 +33,10 @@ def load_config(config_path: str = "config/config.json") -> Dict[str, Any]:
         json.JSONDecodeError: If config file is invalid JSON
     """
     # Load environment variables from .env file if it exists
-    env_path = Path(".env")
-    if env_path.exists():
-        load_dotenv(env_path)
+    if HAS_DOTENV:
+        env_path = Path(".env")
+        if env_path.exists():
+            load_dotenv(env_path)
     
     # Load JSON config
     config_file = Path(config_path)
