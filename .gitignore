@@ -34,9 +34,8 @@ env/
 *~
 
 # Environment variables
+.env
 .env.local
-# Allow empty .env file to be committed (for structure)
-!.env
 
 # Logs
 logs/
@@ -54,9 +53,6 @@ config/config.json
 # Allow certificates directory structure (but not actual cert files)
 !certificates/
 !certificates/.gitkeep
-# Allow empty certificate template files
-!certificates/client-2048.crt
-!certificates/client-2048.key
 
 # OS
 .DS_Store

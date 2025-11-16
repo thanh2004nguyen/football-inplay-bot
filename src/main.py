@@ -214,15 +214,23 @@ def main():
         # Initialize authenticator
         print("\n[3/6] Initializing authentication...")
         betfair_config = config["betfair"]
+        use_password_login = betfair_config.get("use_password_login", False)
+        
+        # Certificate paths are optional for password login
+        cert_path = betfair_config.get("certificate_path") if not use_password_login else None
+        key_path = betfair_config.get("key_path") if not use_password_login else None
+        
         authenticator = BetfairAuthenticator(
             app_key=betfair_config["app_key"],
             username=betfair_config["username"],
             password=betfair_config["password"],
-            cert_path=betfair_config["certificate_path"],
-            key_path=betfair_config["key_path"],
-            login_endpoint=betfair_config["login_endpoint"]
+            cert_path=cert_path,
+            key_path=key_path,
+            login_endpoint=betfair_config.get("login_endpoint")
         )
-        print("✓ Authenticator initialized")
+        
+        login_method = "Password-based" if use_password_login else "Certificate-based"
+        print(f"✓ Authenticator initialized ({login_method} login)")
         
         # Initialize Email Notifier (Milestone 4) - before login to detect login issues
         email_notifier = None
@@ -251,7 +259,11 @@ def main():
             try:
                 login_attempt += 1
                 
-                success, error = authenticator.login()
+                # Use password login or certificate login based on config
+                if use_password_login:
+                    success, error = authenticator.login_with_password()
+                else:
+                    success, error = authenticator.login()
                 
                 if success:
                     session_token = authenticator.get_session_token()
@@ -406,7 +418,11 @@ def main():
             # Re-login failures are logged but do not trigger email alerts.
             logger.warning("Session expiry detected by keep-alive, attempting re-login...")
             try:
-                success, error = authenticator.login()
+                # Use password login or certificate login based on config
+                if use_password_login:
+                    success, error = authenticator.login_with_password()
+                else:
+                    success, error = authenticator.login()
                 if success:
                     new_token = authenticator.get_session_token()
                     market_service.update_session_token(new_token)
@@ -1101,7 +1117,11 @@ def main():
                 # If no internet, re-login will also fail, so skip it
                 if not is_no_internet:
                     try:
-                        success, error = authenticator.login()
+                        # Use password login or certificate login based on config
+                        if use_password_login:
+                            success, error = authenticator.login_with_password()
+                        else:
+                            success, error = authenticator.login()
                         if success:
                             new_token = authenticator.get_session_token()
                             market_service.update_session_token(new_token)
@@ -1146,7 +1166,11 @@ def main():
                     # Re-login (Note: We do NOT send email notifications here to avoid spam.
                     # Email notifications are only sent during initial login loop, first attempt only.)
                     try:
-                        success, error = authenticator.login()
+                        # Use password login or certificate login based on config
+                        if use_password_login:
+                            success, error = authenticator.login_with_password()
+                        else:
+                            success, error = authenticator.login()
                         if success:
                             new_token = authenticator.get_session_token()
                             market_service.update_session_token(new_token)
@@ -1189,6 +1213,17 @@ def main():
         
         return 0
         
+    except KeyboardInterrupt:
+        # Handle Ctrl+C gracefully
+        print("\n\n⚠ Bot stopped by user (Ctrl+C)")
+        if 'logger' in locals():
+            logger.info("Bot stopped by user (KeyboardInterrupt)")
+        if 'keep_alive_manager' in locals():
+            try:
+                keep_alive_manager.stop()
+            except:
+                pass
+        return 0
     except FileNotFoundError as e:
         print(f"\n✗ Configuration error: {e}")
         print("\nPlease ensure:")

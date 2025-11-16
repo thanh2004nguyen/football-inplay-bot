@@ -5,6 +5,10 @@ This script authenticates and retrieves all available football competitions
 import sys
 from pathlib import Path
 import json
+import requests
+import time
+from datetime import datetime
+from collections import OrderedDict
 
 # Add src to path (go up one level from tests/ to project root, then into src/)
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -55,17 +59,123 @@ def test_betfair_competitions():
         )
         print("✓ Market service initialized")
         
-        # Get all competitions (Event Type ID 1 = Soccer/Football)
+        # Get all competitions using listMarketCatalogue with time windows
+        # Strategy: Loop through monthly windows, extract competitions from markets, dedupe
         print("\n[4/4] Fetching competitions from Betfair API...")
+        print("   Using listMarketCatalogue with time windows (2024-2030)...")
+        print("   This method extracts competitions from markets for better coverage")
         event_type_ids = [1]  # 1 = Soccer/Football
         
-        competitions = market_service.list_competitions(event_type_ids)
+        headers = {
+            'X-Application': betfair_config["app_key"],
+            'X-Authentication': session_token,
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        }
+        
+        # Use OrderedDict to dedupe competitions by ID while preserving order
+        competitions_map = OrderedDict()
+        
+        # Generate monthly windows from 2024 to 2030
+        start_year = 2024
+        end_year = 2030
+        total_windows = (end_year - start_year + 1) * 12
+        current_window = 0
+        
+        print(f"   Processing {total_windows} monthly windows...")
+        
+        url = f"{betfair_config['api_endpoint']}/listMarketCatalogue/"
+        
+        for year in range(start_year, end_year + 1):
+            for month in range(1, 13):
+                current_window += 1
+                
+                # Create time window (start of month to start of next month)
+                from_date = datetime(year, month, 1)
+                if month == 12:
+                    to_date = datetime(year + 1, 1, 1)
+                else:
+                    to_date = datetime(year, month + 1, 1)
+                
+                from_str = from_date.strftime("%Y-%m-%dT%H:%M:%SZ")
+                to_str = to_date.strftime("%Y-%m-%dT%H:%M:%SZ")
+                
+                try:
+                    payload = {
+                        "filter": {
+                            "eventTypeIds": event_type_ids,
+                            "marketStartTime": {
+                                "from": from_str,
+                                "to": to_str
+                            }
+                        },
+                        "maxResults": 1000,
+                        "marketProjection": ["COMPETITION"]
+                    }
+                    
+                    response = requests.post(url, json=payload, headers=headers, timeout=30)
+                    response.raise_for_status()
+                    
+                    result = response.json()
+                    markets = result if isinstance(result, list) else []
+                    
+                    # Extract competitions from markets
+                    for market in markets:
+                        comp = None
+                        
+                        # Try to get competition from market.event.competition
+                        if market.get("event") and market["event"].get("competition"):
+                            comp = market["event"]["competition"]
+                        # Try to get competition from market.competition
+                        elif market.get("competition"):
+                            comp = market["competition"]
+                        
+                        if comp and comp.get("id"):
+                            comp_id = comp.get("id")
+                            comp_name = comp.get("name", "Unknown")
+                            
+                            # Store competition (dedupe by ID)
+                            if comp_id not in competitions_map:
+                                competitions_map[comp_id] = {
+                                    "competition": {
+                                        "id": comp_id,
+                                        "name": comp_name
+                                    },
+                                    "marketCount": 0
+                                }
+                            
+                            # Increment market count
+                            competitions_map[comp_id]["marketCount"] += 1
+                    
+                    # Progress update every 12 months (1 year)
+                    if month == 1:
+                        print(f"   Processed {current_window}/{total_windows} windows ({year}) - Found {len(competitions_map)} unique competitions so far...")
+                    
+                    # Throttle to avoid rate limit (500ms between requests)
+                    time.sleep(0.5)
+                    
+                except requests.exceptions.HTTPError as e:
+                    if e.response.status_code == 400:
+                        # No markets in this window, skip
+                        continue
+                    else:
+                        print(f"   ⚠ Error on window {from_str} to {to_str}: {e.response.status_code}")
+                        # Continue to next window
+                        time.sleep(1)
+                        continue
+                except Exception as e:
+                    print(f"   ⚠ Error on window {from_str} to {to_str}: {str(e)[:100]}")
+                    time.sleep(1)
+                    continue
+        
+        # Convert to list format
+        competitions = list(competitions_map.values())
         
         if not competitions:
             print("⚠ No competitions found or error occurred")
             return 1
         
-        print(f"✓ Successfully fetched {len(competitions)} competitions")
+        print(f"\n✓ Successfully fetched {len(competitions)} unique competitions from {total_windows} time windows")
         
         # Display competitions
         print("\n" + "=" * 60)

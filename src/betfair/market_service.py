@@ -168,6 +168,9 @@ class MarketService:
             logger.info(f"Retrieved {len(competitions)} competitions for event types {event_type_ids}")
             return competitions
             
+        except KeyboardInterrupt:
+            # Re-raise KeyboardInterrupt to allow graceful shutdown
+            raise
         except Exception as e:
             logger.error(f"Error listing competitions: {str(e)}")
             return []

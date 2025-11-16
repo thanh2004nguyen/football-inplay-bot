@@ -55,18 +55,38 @@ def check_dependencies():
     critical_ok = True
     for package, description in critical_packages.items():
         try:
-            __import__(package)
-            print_check(f"{package}", True, description)
+            module = __import__(package)
+            # Try to get version
+            version = "unknown"
+            if hasattr(module, '__version__'):
+                version = module.__version__
+            elif package == "certifi":
+                try:
+                    import certifi
+                    version = certifi.__version__
+                except:
+                    pass
+            print_check(f"{package}", True, f"{description} (version: {version})")
         except ImportError:
             print_check(f"{package}", False, f"MISSING - {description}")
             critical_ok = False
     
     for package, description in optional_packages.items():
         try:
-            __import__(package)
-            print_check(f"{package}", True, description)
+            module = __import__(package)
+            version = getattr(module, '__version__', 'unknown')
+            print_check(f"{package}", True, f"{description} (version: {version})")
         except ImportError:
             print_check(f"{package}", False, f"MISSING - {description} (optional, continuing...)")
+    
+    # Also check Python version and SSL version
+    print("\n   Python & SSL Information:")
+    print(f"   → Python version: {sys.version.split()[0]}")
+    try:
+        import ssl
+        print(f"   → SSL version: {ssl.OPENSSL_VERSION}")
+    except:
+        print(f"   → SSL version: unknown")
     
     return critical_ok
 
@@ -216,22 +236,51 @@ def test_login_detailed(config_data: dict):
         print(f"Initializing authenticator...")
         print(f"  → app_key: {config_data['app_key'][:8]}... (length: {len(config_data['app_key'])})")
         print(f"  → username: {config_data['username']}")
-        print(f"  → cert_path: {config_data['cert_path']}")
-        print(f"  → key_path: {config_data['key_path']}")
-        print(f"  → login_endpoint: {config_data['login_endpoint']}")
+        print(f"  → cert_path: {config_data.get('cert_path', 'N/A')}")
+        print(f"  → key_path: {config_data.get('key_path', 'N/A')}")
+        print(f"  → login_endpoint: {config_data.get('login_endpoint', 'N/A')}")
+        
+        # Try password-based login first (no certificate required)
+        print("\n" + "=" * 70)
+        print("  Testing Password-Based Login (No Certificate)")
+        print("=" * 70)
+        
+        # Create authenticator without certificate (for password login)
+        # Certificate paths are optional for password-based login
+        cert_path = config_data.get('cert_path')
+        key_path = config_data.get('key_path')
         
         authenticator = BetfairAuthenticator(
             app_key=config_data['app_key'],
             username=config_data['username'],
             password=config_data['password'],
-            cert_path=config_data['cert_path'],
-            key_path=config_data['key_path'],
-            login_endpoint=config_data['login_endpoint']
+            cert_path=cert_path,  # Optional for password login
+            key_path=key_path,     # Optional for password login
+            login_endpoint=None    # Will use default cert endpoint, but password login uses different endpoint
         )
         print_check("Authenticator initialized", True, "")
         
-        print("\nAttempting login...")
-        success, error = authenticator.login()
+        print("\nAttempting password-based login...")
+        print(f"  → Endpoint: https://identitysso.betfair.it/api/login")
+        success, error = authenticator.login_with_password()
+        
+        # If password login fails, try certificate-based login
+        if not success:
+            print("\n" + "=" * 70)
+            print("  Password login failed, trying Certificate-Based Login")
+            print("=" * 70)
+            
+            # Check if certificate files exist
+            cert_path = Path(config_data.get('cert_path', ''))
+            key_path = Path(config_data.get('key_path', ''))
+            
+            if cert_path.exists() and key_path.exists():
+                print("\nAttempting certificate-based login...")
+                success, error = authenticator.login()
+            else:
+                print("⚠ Certificate files not found, skipping certificate login test")
+                print(f"  → Certificate path: {cert_path}")
+                print(f"  → Key path: {key_path}")
         
         if success:
             print_check("Login successful", True, "")
@@ -332,18 +381,19 @@ def main():
         print("\n❌ Configuration check failed")
         return 1
     
-    # Step 4: Check certificate files
-    cert_ok = check_certificate_files(config_data['cert_path'], config_data['key_path'])
-    if not cert_ok:
-        print("\n❌ Certificate files check failed")
-        print("\nPossible solutions:")
-        print("  1. Check certificate paths in config.json")
-        print("  2. Use absolute paths instead of relative paths")
-        print("  3. Ensure certificate files exist at specified locations")
-        return 1
+    # Step 4: Check certificate files (optional for password login)
+    cert_path = config_data.get('cert_path', '')
+    key_path = config_data.get('key_path', '')
+    if cert_path and key_path:
+        cert_ok = check_certificate_files(cert_path, key_path)
+        if not cert_ok:
+            print("\n⚠ Certificate files check failed (but password login will be tried first)")
+    else:
+        print("\n⚠ Certificate paths not configured (password login will be used)")
     
-    # Step 5: Test SSL connection
-    ssl_ok = test_ssl_connection(config_data['login_endpoint'])
+    # Step 5: Test SSL connection (test password login endpoint)
+    password_login_endpoint = "https://identitysso.betfair.it/api/login"
+    ssl_ok = test_ssl_connection(password_login_endpoint)
     if not ssl_ok:
         print("\n⚠ SSL connection test failed, but continuing with login test...")
     

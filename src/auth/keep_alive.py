@@ -29,7 +29,8 @@ class KeepAliveManager:
         self.app_key = app_key
         self.session_token = session_token
         self.keep_alive_interval = keep_alive_interval
-        self.keep_alive_endpoint = "https://identitysso.betfair.com/api/keepAlive"
+        # Use Italy endpoint for keep-alive
+        self.keep_alive_endpoint = "https://identitysso.betfair.it/api/keepAlive"
         self.running = False
         self.thread: Optional[threading.Thread] = None
         self.last_keep_alive_time: Optional[float] = None
