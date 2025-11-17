@@ -82,6 +82,52 @@ class TelegramNotifier:
             logger.error(f"Error sending Telegram message: {str(e)}")
             return False
     
+    def send_bet_placed_notification(self, bet_result: Dict[str, Any], competition: str, 
+                                    minute: int, score: str, bankroll_before: float):
+        """
+        Send notification when bet is placed
+        
+        Args:
+            bet_result: Dictionary containing bet information
+            competition: Competition name
+            minute: Minute when bet was placed (75')
+            score: Current score at time of bet
+            bankroll_before: Bankroll before bet
+        """
+        try:
+            event_name = bet_result.get("eventName", "N/A")
+            market_name = bet_result.get("marketName", "N/A")
+            runner_name = bet_result.get("runnerName", "N/A")
+            lay_price = bet_result.get("layPrice", 0.0)
+            stake = bet_result.get("stake", 0.0)
+            liability = bet_result.get("liability", 0.0)
+            bet_id = bet_result.get("betId", "N/A")
+            best_back_under = bet_result.get("bestBackPrice", 0.0)
+            reference_odds = bet_result.get("referenceOdds", 0.0)
+            spread_ticks = bet_result.get("spread_ticks", 0)
+            
+            message = f"""🎯 <b>Bet Placed!</b>
+
+📊 <b>Match:</b> {event_name}
+🏆 <b>Competition:</b> {competition}
+⏰ <b>Minute:</b> {minute}'
+📈 <b>Score:</b> {score}
+📈 <b>Market:</b> {market_name}
+🎲 <b>Selection:</b> {runner_name}
+💰 <b>Lay Price:</b> {lay_price:.2f} (best lay + 2 ticks)
+💵 <b>Liability:</b> {liability:.2f} EUR ({bet_result.get('liabilityPercent', 0):.1f}% of bankroll)
+📊 <b>Lay Stake:</b> {stake:.2f} EUR
+💼 <b>Bankroll Before:</b> {bankroll_before:.2f} EUR
+📊 <b>Spread:</b> {spread_ticks} ticks
+✅ <b>Condition:</b> Under back {best_back_under:.2f} >= reference {reference_odds:.2f} → OK
+🆔 <b>Bet ID:</b> {bet_id}
+🕐 <b>Time:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
+            
+            self._send_message(message)
+            
+        except Exception as e:
+            logger.error(f"Error formatting bet placed notification: {str(e)}")
+    
     def send_bet_matched_notification(self, bet_result: Dict[str, Any]):
         """
         Send notification when bet is matched
@@ -105,12 +151,20 @@ class TelegramNotifier:
             size_matched = bet_result.get("sizeMatched", 0.0)
             bet_id = bet_result.get("betId", "N/A")
             
-            message = f"""🎯 <b>Bet Matched!</b>
+            # Determine match status
+            if size_matched >= stake:
+                match_status = "Bet matched"
+            elif size_matched > 0:
+                match_status = f"Bet partially matched ({size_matched:.2f}/{stake:.2f})"
+            else:
+                match_status = "Bet not matched"
+            
+            message = f"""✅ <b>{match_status}</b>
 
 📊 <b>Match:</b> {event_name}
 📈 <b>Market:</b> {market_name}
 🎲 <b>Selection:</b> {runner_name}
-💰 <b>Odds:</b> {lay_price}
+💰 <b>Odds:</b> {lay_price:.2f}
 💵 <b>Stake:</b> {stake:.2f} EUR
 ✅ <b>Matched:</b> {size_matched:.2f} EUR
 🆔 <b>Bet ID:</b> {bet_id}
@@ -168,6 +222,16 @@ class TelegramNotifier:
                 title = f"Bet {outcome}"
                 result_text = f"💰 <b>P/L:</b> {profit_loss:.2f} EUR"
             
+            # Get bankroll info if available
+            bankroll_before = None
+            bankroll_after = None
+            if hasattr(bet_record, 'bankroll_before'):
+                bankroll_before = bet_record.bankroll_before
+                bankroll_after = bet_record.bankroll_after
+            elif isinstance(bet_record, dict):
+                bankroll_before = bet_record.get("bankroll_before") or bet_record.get("Starting_Bankroll")
+                bankroll_after = bet_record.get("bankroll_after") or bet_record.get("Updated_Bankroll")
+            
             # Build message
             message = f"""{emoji} <b>{title}</b>
 
@@ -179,9 +243,14 @@ class TelegramNotifier:
             message += f"""
 📈 <b>Market:</b> {market_name}
 🎲 <b>Selection:</b> {selection}
-💰 <b>Odds:</b> {odds}
+💰 <b>Odds:</b> {odds:.2f}
 💵 <b>Stake:</b> {stake:.2f} EUR
-{result_text}
+{result_text}"""
+            
+            if bankroll_after is not None:
+                message += f"\n💼 <b>Updated Bankroll:</b> {bankroll_after:.2f} EUR"
+            
+            message += f"""
 🆔 <b>Bet ID:</b> {bet_id}
 🕐 <b>Time:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
             

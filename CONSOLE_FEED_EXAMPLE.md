@@ -66,15 +66,15 @@ Matched: 2/4 event(s) matched and started tracking
 ```
 [1] Tracking 3 match(es) from minute 60-74:
 
-  ============================================================================================================
-  Match                                    | Min   | Score       | Targets                  | State                    
-  ------------------------------------------------------------------------------------------------------------
-  Gremio v Vasco da Gama                  | 67'   | 🟢 2-1      | 1-1, 2-1, 2-2           | TARGET (TRACKING)        
-  Botafogo FR v Sport Recife               | 65'   | 1-0         | 0-0, 1-0, 1-1           | TRACKING                 
-  SE Palmeiras v EC Vitoria Salvador       | 60'   | 0-0         | 0-0, 0-1, 1-0           | TRACKING                 
-  ============================================================================================================
+============================================================================================================
+Match | Min | Score | Targets | State
+------------------------------------------------------------------------------------------------------------
+Gremio v Vasco da Gama | 67' | 🟢 2-1 | 1-1, 2-1, 2-2 | TARGET (TRACKING)
+Botafogo FR v Sport Recife | 65' | 1-0 | 0-0, 1-0, 1-1 | TRACKING
+SE Palmeiras v EC Vitoria Salvador | 60' | 🟢 0-0 | 0-0, 0-1, 1-0 | TARGET (TRACKING)
+============================================================================================================
 
-  🎯 0 match(es) ready for bet placement
+🎯 0 match(es) ready for bet placement
 ```
 
 #### 3.2. State Changes (Real-time Events)
@@ -95,14 +95,20 @@ Match READY FOR BET: Gremio v Vasco da Gama
 ```
 [2] Tracking 2 match(es) from minute 60-74:
 
-  ============================================================================================================
-  Match                                    | Min   | Score       | Targets                  | State                    
-  ------------------------------------------------------------------------------------------------------------
-  Gremio v Vasco da Gama                  | 75'   | 🟢 3-1      | 1-1, 2-1, 2-2           | TARGET (READY_FOR_BET)   
-  Botafogo FR v Sport Recife               | 68'   | 1-0         | 0-0, 1-0, 1-1           | TRACKING                 
-  ============================================================================================================
+============================================================================================================
+Match | Min | Score | Targets | State
+------------------------------------------------------------------------------------------------------------
+Gremio v Vasco da Gama | 75' | 🟢 2-1 | 1-1, 2-1, 2-2 | TARGET (READY_FOR_BET)
+Botafogo FR v Sport Recife | 68' | 1-0 | 0-0, 1-0, 1-1 | TRACKING
+============================================================================================================
 
-  🎯 1 match(es) ready for bet placement
+🎯 1 match(es) ready for bet placement
+```
+
+#### 3.5. Skipped Matches Section
+```
+[SKIPPED] Gremio v Vasco da Gama – Reason: spread > 4 ticks
+[SKIPPED] Palmeiras v EC Vitoria – Reason: Under price below reference odds
 ```
 
 ---
@@ -111,26 +117,36 @@ Match READY FOR BET: Gremio v Vasco da Gama
 
 #### 4.1. Bet Placed Successfully
 ```
-Attempting to place lay bet for Gremio v Vasco da Gama (minute 75, score: 3-1)
-  ✅ BET PLACED: Gremio v Vasco da Gama
-     Market: Over/Under 2.5 Goals
-     Lay @ 1.85, Stake: 10.0 EUR, Liability: 8.5 EUR
-     BetId: 123456789
-Bet placed successfully: BetId=123456789, Stake=10.0, Liability=8.5
-Bet matched immediately: BetId=123456789, SizeMatched=10.0
+Attempting to place lay bet for Gremio v Vasco da Gama (minute 75, score: 2-1)
+
+[BET PLACED]
+Match: Gremio v Vasco da Gama
+Competition: Brazil Serie A
+Minute: 75'
+Score: 2-1
+Market: Over 2.5 (LAY)
+Lay price: 3.20 (best lay + 2 ticks)
+Liability: 15.00 (5% of bankroll)
+Lay stake: 6.82
+Spread: 3 ticks
+Condition: Under back 1.80 >= reference 1.75 → OK
+BetId: 123456789
+
+Bet placed successfully: BetId=123456789, Stake=6.82, Liability=15.00
+Bet matched immediately: BetId=123456789, SizeMatched=6.82
 ```
 
 #### 4.2. Updated Table After Bet
 ```
 [3] Tracking 1 match(es) from minute 60-74:
 
-  ============================================================================================================
-  Match                                    | Min   | Score       | Targets                  | State                    
-  ------------------------------------------------------------------------------------------------------------
-  Botafogo FR v Sport Recife               | 70'   | 1-0         | 0-0, 1-0, 1-1           | TRACKING                 
-  ============================================================================================================
+============================================================================================================
+Match | Min | Score | Targets | State
+------------------------------------------------------------------------------------------------------------
+Botafogo FR v Sport Recife | 70' | 1-0 | 0-0, 1-0, 1-1 | TRACKING
+============================================================================================================
 
-  🎯 0 match(es) ready for bet placement
+🎯 0 match(es) ready for bet placement
 ```
 
 ---

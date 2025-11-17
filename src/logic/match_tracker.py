@@ -59,6 +59,8 @@ class MatchTracker:
         self.current_minute = -1
         self.goals: List[Dict[str, Any]] = []
         self.last_goal_count = 0
+        self.score_at_minute_60: Optional[str] = None  # Track score at minute 60 to check if score was reached in 60-74 window
+        self.score_after_goal_in_window: Optional[str] = None  # Track score after goal in 60-74 window to verify current score
         
         # State
         self.state = MatchState.WAITING_60
@@ -142,7 +144,14 @@ class MatchTracker:
         if self.state == MatchState.WAITING_60:
             if self.current_minute >= self.start_minute:
                 self.state = MatchState.MONITORING_60_74
+                # Store score at minute 60 to check if later score was reached in 60-74 window
+                if self.current_minute == 60 and self.score_at_minute_60 is None:
+                    self.score_at_minute_60 = self.current_score
                 logger.info(f"Match {self.betfair_event_name}: Started monitoring (minute {self.current_minute})")
+        
+        # Also store score at minute 60 if we're already in MONITORING_60_74 state and it's exactly minute 60
+        if self.state == MatchState.MONITORING_60_74 and self.current_minute == 60 and self.score_at_minute_60 is None:
+            self.score_at_minute_60 = self.current_score
         
         elif self.state == MatchState.MONITORING_60_74:
             # Check qualification
@@ -171,6 +180,10 @@ class MatchTracker:
                     self.qualified = True
                     self.qualification_reason = reason
                     self.qualified_at = datetime.now()
+                    # Store score after qualification (when goal in 60-74 or 0-0 exception)
+                    # This helps verify if current score was reached in the window
+                    if "Goal in" in reason or "0-0 exception" in reason:
+                        self.score_after_goal_in_window = self.current_score
                     self.state = MatchState.QUALIFIED
                     logger.info(f"Match {self.betfair_event_name}: QUALIFIED - {reason}")
             
@@ -185,9 +198,47 @@ class MatchTracker:
         
         elif self.state == MatchState.QUALIFIED:
             # Check if ready for bet (minute 75+)
+            # IMPORTANT: Re-check if current score is still in targets at minute 75
             if self.current_minute >= 75:
+                # Re-check if current score is still in targets
+                if excel_path:
+                    from logic.qualification import get_competition_targets, normalize_score
+                    normalized_score = normalize_score(self.current_score)
+                    target_scores = get_competition_targets(self.competition_name, excel_path)
+                    
+                    if target_scores:
+                        normalized_targets = {normalize_score(t) for t in target_scores}
+                        
+                        if normalized_score not in normalized_targets:
+                            # Score is no longer in targets - disqualify
+                            self.state = MatchState.DISQUALIFIED
+                            self.discard_reason = "score-not-target-at-75"
+                            self.qualified = False
+                            logger.info(f"Match {self.betfair_event_name}: DISQUALIFIED at minute 75 - score {self.current_score} not in targets {sorted(target_scores)}")
+                            return
+                
+                # Score is still in targets, proceed to READY_FOR_BET
                 self.state = MatchState.READY_FOR_BET
                 logger.info(f"Match {self.betfair_event_name}: Ready for bet (minute {self.current_minute})")
+        
+        elif self.state == MatchState.READY_FOR_BET:
+            # Continue checking if score is still in targets after becoming READY_FOR_BET
+            # If a goal is scored after 60-74 and moves score outside targets, remove TARGET status
+            if excel_path:
+                from logic.qualification import get_competition_targets, normalize_score
+                normalized_score = normalize_score(self.current_score)
+                target_scores = get_competition_targets(self.competition_name, excel_path)
+                
+                if target_scores:
+                    normalized_targets = {normalize_score(t) for t in target_scores}
+                    
+                    if normalized_score not in normalized_targets:
+                        # Score is no longer in targets - disqualify
+                        self.state = MatchState.DISQUALIFIED
+                        self.discard_reason = "score-not-target-after-ready"
+                        self.qualified = False
+                        logger.info(f"Match {self.betfair_event_name}: DISQUALIFIED after READY_FOR_BET - score {self.current_score} not in targets {sorted(target_scores)}")
+                        return
     
     def get_status(self) -> Dict[str, Any]:
         """

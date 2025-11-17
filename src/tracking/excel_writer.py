@@ -50,11 +50,18 @@ class ExcelWriter:
             if self.excel_path.exists():
                 df = pd.read_excel(self.excel_path)
             else:
-                # Create new DataFrame with columns
+                # Create new DataFrame with columns (per client requirements)
                 df = pd.DataFrame(columns=[
-                    "Bet_ID", "Match_ID", "Competition", "Market_Name", "Selection",
-                    "Odds", "Stake", "Bet_Time", "Outcome", "Profit_Loss",
-                    "Bankroll_Before", "Bankroll_After", "Status", "Settled_At"
+                    "Bet_ID", "Match_ID", "Match", "Competition",
+                    "Minute_of_Entry", "Live_Score_at_Entry", "Target_Score_Used",
+                    "Market_Name", "Selection",
+                    "Best_BACK_Under_X5", "Reference_Under_X5_Odds",
+                    "Best_LAY_Over_X5", "Final_LAY_Price",
+                    "Spread_Ticks", "Liability_Percent", "Liability_Amount",
+                    "Lay_Stake", "Odds",
+                    "Bet_Time", "Starting_Bankroll",
+                    "Outcome", "Profit_Loss", "Updated_Bankroll",
+                    "Status", "Settled_At"
                 ])
             
             # Convert datetime strings to datetime objects if needed

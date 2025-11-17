@@ -61,7 +61,7 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
         matching_refresh_interval: Matching refresh interval in seconds
     
     Returns:
-        Tuple of (matched_count, total_events, new_tracked_matches)
+        Tuple of (matched_count, total_events, new_tracked_matches, skipped_matches_list)
     """
     from logic.bet_executor import execute_lay_bet
     from logic.match_tracker import MatchState
@@ -69,6 +69,7 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
     matched_count = 0
     total_events = len(unique_events)
     new_tracked_matches = []  # Collect newly matched matches for batch logging
+    skipped_matches_list = []  # Collect skipped matches for console display
     
     # Log refresh message if this is a refresh
     if is_refresh:
@@ -172,8 +173,51 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
                         tracker.bet_placed = True
                         tracker.bet_id = bet_result.get("betId", "")
                         
-                        # Record bet in BetTracker
+                        # Record bet in BetTracker with all required data
                         if bet_tracker:
+                            # Get Excel data for target_score_used and reference_odds
+                            from logic.qualification import get_competition_targets, normalize_score
+                            target_score_used = tracker.current_score  # Current score is the target score used
+                            reference_odds_under_x5 = None
+                            liability_percent = None
+                            
+                            if excel_path:
+                                # Get reference odds and stake % from Excel
+                                from logic.qualification import load_competition_map_from_excel
+                                competition_map = load_competition_map_from_excel(str(excel_path))
+                                if tracker.competition_name in competition_map:
+                                    comp_data = competition_map[tracker.competition_name]
+                                    # Get min_odds and stake for this specific score
+                                    normalized_score = normalize_score(tracker.current_score)
+                                    # Find the row in Excel that matches this competition and score
+                                    import pandas as pd
+                                    try:
+                                        df = pd.read_excel(excel_path)
+                                        # Find row matching competition and score
+                                        for idx, row in df.iterrows():
+                                            comp_name = None
+                                            if 'Competition-Live' in df.columns:
+                                                comp_name = str(row.get('Competition-Live', '')).strip()
+                                            elif 'Competition' in df.columns:
+                                                comp_name = str(row.get('Competition', '')).strip()
+                                            
+                                            if comp_name == tracker.competition_name:
+                                                result = str(row.get('Result', '')).strip()
+                                                if normalize_score(result) == normalized_score:
+                                                    # Found matching row
+                                                    if 'Min_Odds' in df.columns or 'Min Odds' in df.columns:
+                                                        min_odds_col = 'Min_Odds' if 'Min_Odds' in df.columns else 'Min Odds'
+                                                        ref_odds = row.get(min_odds_col)
+                                                        if pd.notna(ref_odds):
+                                                            reference_odds_under_x5 = float(ref_odds)
+                                                    if 'Stake' in df.columns:
+                                                        stake_val = row.get('Stake')
+                                                        if pd.notna(stake_val):
+                                                            liability_percent = float(stake_val)
+                                                    break
+                                    except Exception as e:
+                                        logger.warning(f"Error reading Excel for bet record: {str(e)}")
+                            
                             bet_record = bet_tracker.record_bet(
                                 bet_id=bet_result.get("betId", ""),
                                 match_id=tracker.betfair_event_id,
@@ -181,18 +225,50 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
                                 market_name=bet_result.get("marketName", ""),
                                 selection=bet_result.get("runnerName", ""),
                                 odds=bet_result.get("layPrice", 0.0),
-                                stake=bet_result.get("stake", 0.0)
+                                stake=bet_result.get("stake", 0.0),
+                                match_name=tracker.betfair_event_name,
+                                minute_of_entry=tracker.current_minute,
+                                live_score_at_entry=tracker.current_score,
+                                target_score_used=target_score_used,
+                                best_back_under_x5=bet_result.get("bestBackPrice"),
+                                reference_odds_under_x5=reference_odds_under_x5,
+                                best_lay_over_x5=bet_result.get("bestLayPrice"),
+                                final_lay_price=bet_result.get("layPrice"),
+                                spread_ticks=bet_result.get("spread_ticks"),
+                                liability_percent=liability_percent,
+                                liability_amount=bet_result.get("liability")
                             )
                             
                             # Write to Excel if enabled
                             if excel_writer:
                                 excel_writer.write_bet_record(bet_record)
                         
-                        # Console output
-                        print(f"  ✅ BET PLACED: {tracker.betfair_event_name}")
-                        print(f"     Market: {bet_result.get('marketName', 'N/A')}")
-                        print(f"     Lay @ {bet_result.get('layPrice', 0.0)}, Stake: {bet_result.get('stake', 0.0)} EUR, Liability: {bet_result.get('liability', 0.0)} EUR")
-                        print(f"     BetId: {bet_result.get('betId', 'N/A')}")
+                        # Console output - detailed format per client requirements
+                        print(f"\n[BET PLACED]")
+                        print(f"Match: {tracker.betfair_event_name}")
+                        print(f"Competition: {tracker.competition_name}")
+                        print(f"Minute: {tracker.current_minute}'")
+                        print(f"Score: {tracker.current_score}")
+                        print(f"Market: {bet_result.get('marketName', 'N/A')} (LAY)")
+                        lay_price = bet_result.get('layPrice', 0.0)
+                        best_lay = bet_result.get('bestLayPrice', 0.0)
+                        print(f"Lay price: {lay_price:.2f} (best lay {best_lay:.2f} + 2 ticks)")
+                        liability = bet_result.get('liability', 0.0)
+                        liability_percent = bet_record.liability_percent if bet_record else None
+                        if liability_percent:
+                            print(f"Liability: {liability:.2f} ({liability_percent:.1f}% of bankroll)")
+                        else:
+                            print(f"Liability: {liability:.2f}")
+                        print(f"Lay stake: {bet_result.get('stake', 0.0):.2f}")
+                        spread_ticks = bet_result.get('spread_ticks', 0)
+                        print(f"Spread: {spread_ticks} ticks")
+                        best_back_under = bet_result.get('bestBackPrice', 0.0)
+                        reference_odds = bet_record.reference_odds_under_x5 if bet_record else None
+                        if reference_odds:
+                            print(f"Condition: Under back {best_back_under:.2f} >= reference {reference_odds:.2f} → OK")
+                        else:
+                            print(f"Condition: Under back {best_back_under:.2f} (reference N/A)")
+                        print(f"BetId: {bet_result.get('betId', 'N/A')}\n")
                         
                         logger.info(f"Bet placed successfully: BetId={bet_result.get('betId')}, Stake={bet_result.get('stake')}, Liability={bet_result.get('liability')}")
                         
@@ -200,7 +276,26 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
                         if sound_notifier:
                             sound_notifier.play_bet_placed_sound()
                         
-                        # Check if bet is matched and play matched sound
+                        # Send Telegram notification for bet placed
+                        if telegram_notifier:
+                            try:
+                                bankroll_before = bet_record.bankroll_before if bet_record else 0.0
+                                # Add additional info to bet_result for notification
+                                bet_result_with_info = bet_result.copy()
+                                bet_result_with_info["eventName"] = tracker.betfair_event_name
+                                bet_result_with_info["referenceOdds"] = bet_record.reference_odds_under_x5 if bet_record else None
+                                bet_result_with_info["liabilityPercent"] = bet_record.liability_percent if bet_record else None
+                                telegram_notifier.send_bet_placed_notification(
+                                    bet_result_with_info,
+                                    competition=tracker.competition_name,
+                                    minute=tracker.current_minute,
+                                    score=tracker.current_score,
+                                    bankroll_before=bankroll_before
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to send Telegram bet placed notification: {str(e)}")
+                        
+                        # Check if bet is matched and play matched sound + send notification
                         size_matched = bet_result.get("sizeMatched", 0.0)
                         if size_matched and size_matched > 0:
                             if sound_notifier:
@@ -209,7 +304,9 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
                             # Send Telegram notification for bet matched
                             if telegram_notifier:
                                 try:
-                                    telegram_notifier.send_bet_matched_notification(bet_result)
+                                    bet_result_with_info = bet_result.copy()
+                                    bet_result_with_info["eventName"] = tracker.betfair_event_name
+                                    telegram_notifier.send_bet_matched_notification(bet_result_with_info)
                                 except Exception as e:
                                     logger.error(f"Failed to send Telegram bet matched notification: {str(e)}")
                             
@@ -220,14 +317,30 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
                         
                         # Record skipped match (only once)
                         logger.warning(f"Failed to place bet for {tracker.betfair_event_name}")
-                        print(f"  ⚠ Could not place bet for {tracker.betfair_event_name}")
+                        # Collect skipped match for console display
+                        skip_reason = "Unknown reason"
+                        if bet_result and isinstance(bet_result, dict):
+                            skip_reason = bet_result.get("reason", bet_result.get("skip_reason", "Unknown reason"))
+                        
+                        skipped_matches_list.append({
+                            "match_name": tracker.betfair_event_name,
+                            "reason": skip_reason
+                        })
                         
                         if skipped_matches_writer:
+                            # Get targets list from Excel
+                            targets_list = set()
+                            if excel_path:
+                                from logic.qualification import get_competition_targets
+                                targets_list = get_competition_targets(tracker.competition_name, str(excel_path))
+                            
                             # Prepare skipped match data
                             skipped_data = {
                                 "match_name": tracker.betfair_event_name,
                                 "competition": tracker.competition_name,
                                 "minute": tracker.current_minute if tracker.current_minute >= 0 else "N/A",
+                                "minute_75_score": tracker.current_score,
+                                "targets_list": targets_list,
                                 "status": tracker.state.value if hasattr(tracker.state, 'value') else str(tracker.state),
                                 "timestamp": datetime.now()
                             }
@@ -355,7 +468,7 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
                 if live_matches:
                     logger.debug(f"No match found for: {betfair_event_name}")
     
-    return matched_count, total_events, new_tracked_matches
+    return matched_count, total_events, new_tracked_matches, skipped_matches_list
 
 
 def main():
@@ -705,7 +818,7 @@ def main():
                                 should_refresh_matching = False
                         
                         # Perform matching (using function)
-                        matched_count, total_events, new_tracked_matches = perform_matching(
+                        matched_count, total_events, new_tracked_matches, skipped_matches_list = perform_matching(
                             unique_events=unique_events,
                             live_matches=live_matches,
                             live_score_client=live_score_client,
@@ -842,18 +955,27 @@ def main():
                                     trackers_60_74,
                                     excel_path=str(excel_path) if excel_path.exists() else None
                                 )
+                                # Format: [iteration] Tracking X match(es) from minute 60-74:
                                 logger.info(f"\n[{iteration}] Tracking {len(trackers_60_74)} match(es) from minute 60-74:\n{table}")
                                 
-                                # Also show summary
+                                # Summary: Only matches that are still TARGET at minute 75 AND meet all conditions
+                                # Note: ready_for_bet includes matches at 75+ that are still TARGET
                                 ready_for_bet = match_tracker_manager.get_ready_for_bet()
                                 if ready_for_bet:
-                                    logger.info(f"  🎯 {len(ready_for_bet)} match(es) ready for bet placement")
+                                    logger.info(f"🎯 {len(ready_for_bet)} match(es) ready for bet placement")
+                                
+                                # Display skipped matches section if any
+                                if skipped_matches_list:
+                                    from utils.formatters import format_skipped_matches_section
+                                    skipped_section = format_skipped_matches_section(skipped_matches_list)
+                                    if skipped_section:
+                                        logger.info(f"\n{skipped_section}")
                             else:
                                 # No matches at 60-74 yet, just show count
                                 ready_for_bet = match_tracker_manager.get_ready_for_bet()
                                 logger.info(f"Tracking: {len(all_trackers)} match(es) (waiting for minute 60-74), {len(ready_for_bet)} ready for bet")
                                 if ready_for_bet:
-                                    logger.info(f"  🎯 {len(ready_for_bet)} match(es) ready for bet placement")
+                                    logger.info(f"🎯 {len(ready_for_bet)} match(es) ready for bet placement")
                 else:
                     logger.info("No in-play match-specific markets found")
                     print(f"[{iteration}] No in-play match-specific markets found")

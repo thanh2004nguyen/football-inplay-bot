@@ -14,7 +14,18 @@ class BetRecord:
     
     def __init__(self, bet_id: str, match_id: str, competition: str,
                  market_name: str, selection: str, odds: float, stake: float,
-                 bet_time: datetime, bankroll_before: float):
+                 bet_time: datetime, bankroll_before: float,
+                 match_name: Optional[str] = None,
+                 minute_of_entry: Optional[int] = None,
+                 live_score_at_entry: Optional[str] = None,
+                 target_score_used: Optional[str] = None,
+                 best_back_under_x5: Optional[float] = None,
+                 reference_odds_under_x5: Optional[float] = None,
+                 best_lay_over_x5: Optional[float] = None,
+                 final_lay_price: Optional[float] = None,
+                 spread_ticks: Optional[int] = None,
+                 liability_percent: Optional[float] = None,
+                 liability_amount: Optional[float] = None):
         """
         Initialize bet record
         
@@ -28,6 +39,17 @@ class BetRecord:
             stake: Stake amount
             bet_time: When bet was placed
             bankroll_before: Bankroll before bet
+            match_name: Match name (home vs away)
+            minute_of_entry: Minute when bet was placed (75')
+            live_score_at_entry: Live score at time of bet
+            target_score_used: Target score from Excel
+            best_back_under_x5: Best BACK price on Under X.5
+            reference_odds_under_x5: Reference Under X.5 odds from Excel
+            best_lay_over_x5: Best LAY price on Over X.5
+            final_lay_price: Final LAY price used (best lay + 2 ticks)
+            spread_ticks: Spread in ticks at time of entry
+            liability_percent: Liability % from Excel
+            liability_amount: Liability amount
         """
         self.bet_id = bet_id
         self.match_id = match_id
@@ -38,6 +60,19 @@ class BetRecord:
         self.stake = stake
         self.bet_time = bet_time
         self.bankroll_before = bankroll_before
+        
+        # Additional fields per client requirements
+        self.match_name = match_name
+        self.minute_of_entry = minute_of_entry
+        self.live_score_at_entry = live_score_at_entry
+        self.target_score_used = target_score_used
+        self.best_back_under_x5 = best_back_under_x5
+        self.reference_odds_under_x5 = reference_odds_under_x5
+        self.best_lay_over_x5 = best_lay_over_x5
+        self.final_lay_price = final_lay_price
+        self.spread_ticks = spread_ticks
+        self.liability_percent = liability_percent
+        self.liability_amount = liability_amount
         
         # To be updated later
         self.outcome: Optional[str] = None  # "Won", "Lost", "Pending", "Void"
@@ -68,16 +103,27 @@ class BetRecord:
         return {
             "Bet_ID": self.bet_id,
             "Match_ID": self.match_id,
+            "Match": self.match_name or "",
             "Competition": self.competition,
+            "Minute_of_Entry": self.minute_of_entry if self.minute_of_entry is not None else "",
+            "Live_Score_at_Entry": self.live_score_at_entry or "",
+            "Target_Score_Used": self.target_score_used or "",
             "Market_Name": self.market_name,
             "Selection": self.selection,
+            "Best_BACK_Under_X5": self.best_back_under_x5 if self.best_back_under_x5 is not None else "",
+            "Reference_Under_X5_Odds": self.reference_odds_under_x5 if self.reference_odds_under_x5 is not None else "",
+            "Best_LAY_Over_X5": self.best_lay_over_x5 if self.best_lay_over_x5 is not None else "",
+            "Final_LAY_Price": self.final_lay_price if self.final_lay_price is not None else self.odds,
+            "Spread_Ticks": self.spread_ticks if self.spread_ticks is not None else "",
+            "Liability_Percent": self.liability_percent if self.liability_percent is not None else "",
+            "Liability_Amount": self.liability_amount if self.liability_amount is not None else "",
+            "Lay_Stake": self.stake,
             "Odds": self.odds,
-            "Stake": self.stake,
             "Bet_Time": self.bet_time,  # Keep as datetime object for Excel
+            "Starting_Bankroll": self.bankroll_before,
             "Outcome": self.outcome or "Pending",
             "Profit_Loss": self.profit_loss if self.profit_loss is not None else 0.0,
-            "Bankroll_Before": self.bankroll_before,
-            "Bankroll_After": self.bankroll_after if self.bankroll_after is not None else self.bankroll_before,
+            "Updated_Bankroll": self.bankroll_after if self.bankroll_after is not None else self.bankroll_before,
             "Status": self.status,
             "Settled_At": self.settled_at if self.settled_at else None  # Keep as datetime object or None
         }
@@ -100,7 +146,18 @@ class BetTracker:
         # Logging moved to main.py setup checklist
     
     def record_bet(self, bet_id: str, match_id: str, competition: str,
-                   market_name: str, selection: str, odds: float, stake: float) -> BetRecord:
+                   market_name: str, selection: str, odds: float, stake: float,
+                   match_name: Optional[str] = None,
+                   minute_of_entry: Optional[int] = None,
+                   live_score_at_entry: Optional[str] = None,
+                   target_score_used: Optional[str] = None,
+                   best_back_under_x5: Optional[float] = None,
+                   reference_odds_under_x5: Optional[float] = None,
+                   best_lay_over_x5: Optional[float] = None,
+                   final_lay_price: Optional[float] = None,
+                   spread_ticks: Optional[int] = None,
+                   liability_percent: Optional[float] = None,
+                   liability_amount: Optional[float] = None) -> BetRecord:
         """
         Record a new bet
         
@@ -112,6 +169,17 @@ class BetTracker:
             selection: Selection name
             odds: Odds at time of bet
             stake: Stake amount
+            match_name: Match name (home vs away)
+            minute_of_entry: Minute when bet was placed (75')
+            live_score_at_entry: Live score at time of bet
+            target_score_used: Target score from Excel
+            best_back_under_x5: Best BACK price on Under X.5
+            reference_odds_under_x5: Reference Under X.5 odds from Excel
+            best_lay_over_x5: Best LAY price on Over X.5
+            final_lay_price: Final LAY price used (best lay + 2 ticks)
+            spread_ticks: Spread in ticks at time of entry
+            liability_percent: Liability % from Excel
+            liability_amount: Liability amount
         
         Returns:
             BetRecord instance
@@ -127,7 +195,18 @@ class BetTracker:
             odds=odds,
             stake=stake,
             bet_time=datetime.now(),
-            bankroll_before=bankroll_before
+            bankroll_before=bankroll_before,
+            match_name=match_name,
+            minute_of_entry=minute_of_entry,
+            live_score_at_entry=live_score_at_entry,
+            target_score_used=target_score_used,
+            best_back_under_x5=best_back_under_x5,
+            reference_odds_under_x5=reference_odds_under_x5,
+            best_lay_over_x5=best_lay_over_x5,
+            final_lay_price=final_lay_price,
+            spread_ticks=spread_ticks,
+            liability_percent=liability_percent,
+            liability_amount=liability_amount
         )
         
         self.bets[bet_id] = bet_record

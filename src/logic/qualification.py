@@ -87,15 +87,21 @@ def check_goal_in_window(goals: List[Dict[str, Any]], start_minute: int, end_min
 
 def check_zero_zero_exception(score: str, current_minute: int, 
                              competition_name: str,
-                             zero_zero_exception_competitions: Set[str]) -> Tuple[bool, str]:
+                             zero_zero_exception_competitions: Set[str],
+                             excel_path: Optional[str] = None) -> Tuple[bool, str]:
     """
     Check if 0-0 exception applies
+    
+    Special case: If at minute 60 the score is 0-0 and 0-0 is part of the targets,
+    then the match should be considered a target immediately (it should get the green dot),
+    even if no goal has been scored between 60 and 74 yet.
     
     Args:
         score: Current score (e.g., "0-0", "1-0")
         current_minute: Current match minute
         competition_name: Competition name
         zero_zero_exception_competitions: Set of competitions with 0-0 exception
+        excel_path: Path to Excel file (to check if 0-0 is in targets)
     
     Returns:
         (is_qualified, reason)
@@ -103,6 +109,17 @@ def check_zero_zero_exception(score: str, current_minute: int,
     # Check if score is 0-0
     if score != "0-0":
         return False, "Score is not 0-0"
+    
+    # Special case: At minute 60, if 0-0 is in targets, qualify immediately
+    if current_minute == 60 and excel_path:
+        from logic.qualification import get_competition_targets, normalize_score
+        target_scores = get_competition_targets(competition_name, excel_path)
+        if target_scores:
+            normalized_targets = {normalize_score(t) for t in target_scores}
+            normalized_score = normalize_score(score)
+            if normalized_score in normalized_targets:
+                logger.info(f"0-0 exception at minute 60: score 0-0 is in targets for '{competition_name}'")
+                return True, "0-0 exception at minute 60 (score in targets)"
     
     # Check if in 60-74 minute window
     if not (60 <= current_minute <= 74):
@@ -115,6 +132,63 @@ def check_zero_zero_exception(score: str, current_minute: int,
     else:
         logger.debug(f"0-0 score but competition '{competition_name}' not in exception list")
         return False, "0-0 but competition not in exception list"
+
+
+def is_score_reached_in_window(current_score: str, score_at_minute_60: Optional[str],
+                               goals: List[Dict[str, Any]], start_minute: int, end_minute: int,
+                               var_check_enabled: bool = True,
+                               score_after_goal_in_window: Optional[str] = None) -> bool:
+    """
+    Check if current score was reached by a goal scored between start_minute and end_minute (inclusive)
+    
+    This function determines if the current score is different from the score at minute 60,
+    and if that change was caused by a goal in the 60-74 window.
+    
+    Args:
+        current_score: Current score (e.g., "2-1")
+        score_at_minute_60: Score at minute 60 (None if not yet at minute 60)
+        goals: List of all goals (may include cancelled)
+        start_minute: Start of goal detection window (e.g., 60)
+        end_minute: End of goal detection window (e.g., 74)
+        var_check_enabled: Whether to filter cancelled goals
+        score_after_goal_in_window: Score after goal in 60-74 window (if available, more accurate)
+    
+    Returns:
+        True if score was reached by a goal in the window, False otherwise
+    """
+    # Filter cancelled goals if VAR check is enabled
+    if var_check_enabled:
+        valid_goals = filter_cancelled_goals(goals)
+    else:
+        valid_goals = goals
+    
+    # If we have score_after_goal_in_window, use it for more accurate check
+    if score_after_goal_in_window is not None:
+        # If current score matches the score after goal in window, it was reached in the window
+        if current_score == score_after_goal_in_window:
+            return True
+        # If current score is different, it might have changed after the window (goal after 74)
+        # So it was NOT reached in the window
+        return False
+    
+    # Fallback: If we don't have score_after_goal_in_window, use less accurate method
+    # If we don't have score at minute 60, we can't determine if score was reached in window
+    if score_at_minute_60 is None:
+        return False
+    
+    # If current score is same as score at minute 60, it was NOT reached in the window
+    if current_score == score_at_minute_60:
+        return False
+    
+    # Check if there's a goal in the window that could have changed the score
+    goals_in_window = [g for g in valid_goals if start_minute <= g.get('minute', 0) <= end_minute]
+    
+    if not goals_in_window:
+        return False
+    
+    # If there are goals in the window and score changed, we assume it was reached in the window
+    # This is less accurate but works if we don't have score_after_goal_in_window
+    return True
 
 
 def load_competition_map_from_excel(excel_path: str) -> Dict[str, Dict[str, Any]]:
@@ -504,7 +578,7 @@ def is_qualified(score: str,
     # Check 0-0 exception first (only if in window)
     if 60 <= current_minute <= 74:
         qualified, reason = check_zero_zero_exception(
-            score, current_minute, competition_name, zero_zero_exception_competitions
+            score, current_minute, competition_name, zero_zero_exception_competitions, excel_path
         )
         if qualified:
             return True, reason

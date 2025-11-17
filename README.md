@@ -7,14 +7,19 @@ Automated betting bot for Betfair Exchange (Italy) - Complete Implementation (Mi
 This bot automates lay betting on Betfair Italy Exchange for football matches. It monitors live matches, detects qualification conditions (goals between 60-74 minutes), and automatically places lay bets on Over X.5 markets when conditions are met.
 
 **Key Features:**
-- ✅ Certificate-based authentication with automatic session management
+- ✅ Certificate-based or password-based authentication with automatic session management
 - ✅ Live match detection and tracking from Live Score API
-- ✅ Automatic qualification detection (goals in 60-74 minute window)
-- ✅ Automatic lay bet placement on Over X.5 markets
+- ✅ Automatic qualification detection (goals in 60-74 minute window, 0-0 exception)
+- ✅ Green dot (🟢) TARGET logic: Shows matches with target scores reached in 60-74 window
+- ✅ Automatic lay bet placement at exactly minute 75' on Over X.5 markets
+- ✅ Market condition checks: Under X.5 reference odds, spread ≤ 4 ticks
+- ✅ Liability-based stake calculation from Excel (bankroll percentage)
+- ✅ Telegram notifications for bet placed, matched, and settled
 - ✅ Sound and email notifications for important events
-- ✅ Comprehensive logging and error handling
+- ✅ Comprehensive Excel logging with automatic bankroll updates
+- ✅ Console feed with real-time tracking table (60-74 minutes)
 - ✅ Rate limiting for both Betfair and Live Score APIs
-- ✅ Excel tracking for bet records and skipped matches
+- ✅ Automatic mapping refresh every 60 minutes
 
 ## Requirements
 
@@ -251,19 +256,23 @@ BetfairItalyBot/
    - Applies qualification logic (goals, VAR, 0-0 exception)
    - Early discard at minute 60 if score won't qualify
 
-4. **Bet Execution:**
-   - At minute 75, checks market conditions:
-     - Spread ≤ 4 ticks
-     - Odds within range (1.5 - 10.0)
-     - Sufficient liquidity
-   - Reads stake percentage from Excel file
-   - Places lay bet on Over X.5 (+2 ticks offset)
-   - Records bet in Excel
+4. **Bet Execution (at exactly minute 75'):**
+   - Re-checks current score is still in target list
+   - Checks market conditions:
+     - Under X.5 best back price ≥ reference odds (from Excel)
+     - Over X.5 spread ≤ 4 ticks (best lay - best back)
+     - Sufficient liquidity on lay side
+   - Reads stake percentage (as liability %) from Excel file
+   - Calculates liability: `Liability = Bankroll × (stake_percent / 100)`
+   - Calculates lay stake: `Stake = Liability / (lay_price - 1)`
+   - Places lay bet on Over X.5 at best lay + 2 ticks
+   - Records bet in Excel with all required fields
+   - Logs skipped matches with detailed reasons
 
 5. **Notifications:**
-   - Plays sound when bet is placed
-   - Plays sound when bet is matched
-   - Sends email for critical errors (maintenance, terms)
+   - **Telegram**: Bet placed (with all details), bet matched/partially matched, match settled (WIN/LOSE with P/L)
+   - **Sound**: Plays when bet is placed and matched
+   - **Email**: Sends for critical errors (maintenance, terms)
 
 ## Logging
 

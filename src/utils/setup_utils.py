@@ -2,6 +2,7 @@
 Setup utilities for initializing services and building checklist
 """
 import logging
+import pandas as pd
 from pathlib import Path
 from typing import Dict, List, Any, Set, Tuple, Optional
 
@@ -136,9 +137,37 @@ def initialize_all_services(config: dict, session_token: str, service_factory: A
         project_root = Path(__file__).parent.parent.parent
         excel_path_full = project_root / excel_path
         
-        services['bet_tracker'] = BetTracker(initial_bankroll=initial_bankroll)
+        # Try to load bankroll from Excel (last Updated_Bankroll value from settled bets)
+        # Per client requirement: Bankroll should be updated automatically in Excel when bet result is known
+        # and used as the base for future liability calculations
+        excel_writer_temp = ExcelWriter(str(excel_path_full))
+        bankroll_from_excel = None
+        try:
+            all_bets = excel_writer_temp.get_all_bets()
+            if not all_bets.empty and 'Updated_Bankroll' in all_bets.columns:
+                # Get last Updated_Bankroll from settled bets (Won/Lost/VOID)
+                # This represents the most recent bankroll after settlement
+                settled_bets = all_bets[all_bets['Outcome'].isin(['Won', 'Lost', 'VOID'])]
+                if not settled_bets.empty:
+                    # Get the last row's Updated_Bankroll
+                    last_bankroll = settled_bets['Updated_Bankroll'].dropna()
+                    if not last_bankroll.empty:
+                        try:
+                            bankroll_from_excel = float(last_bankroll.iloc[-1])
+                            logger.info(f"Loaded bankroll from Excel (last settled bet): {bankroll_from_excel:.2f}")
+                        except (ValueError, TypeError):
+                            pass
+        except Exception as e:
+            logger.debug(f"Could not load bankroll from Excel: {str(e)}")
+        
+        # Use bankroll from Excel if available, otherwise use account balance
+        final_bankroll = bankroll_from_excel if bankroll_from_excel is not None else initial_bankroll
+        if bankroll_from_excel is not None:
+            logger.info(f"Using bankroll from Excel: {final_bankroll:.2f} (instead of account balance: {initial_bankroll:.2f})")
+        
+        services['bet_tracker'] = BetTracker(initial_bankroll=final_bankroll)
         services['excel_writer'] = ExcelWriter(str(excel_path_full))
-        checklist_items.append(f"  ✓ Bet tracker: Initialized (bankroll: {initial_bankroll:.2f})")
+        checklist_items.append(f"  ✓ Bet tracker: Initialized (bankroll: {final_bankroll:.2f})")
         checklist_items.append(f"  ✓ Excel writer: {excel_path_full.name}")
     else:
         services['bet_tracker'] = None

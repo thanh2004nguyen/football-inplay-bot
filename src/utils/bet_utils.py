@@ -126,11 +126,21 @@ def process_finished_matches(match_tracker_manager, bet_tracker, excel_writer,
                         except Exception as e:
                             logger.error(f"Failed to send Telegram bet settled notification: {str(e)}")
                     
-                    # Export to Excel
+                    # Update Excel record (not append - update existing record)
                     try:
                         bet_dict = settled_bet.to_dict()
-                        excel_writer.append_bet_record(bet_dict)
-                        logger.info(f"Bet {settled_bet.bet_id} settled and exported: {outcome}, P/L: {settled_bet.profit_loss:.2f}")
+                        # Update existing record instead of appending
+                        excel_writer.update_bet_record(
+                            bet_id=settled_bet.bet_id,
+                            updates={
+                                "Outcome": bet_dict.get("Outcome", "Pending"),
+                                "Profit_Loss": bet_dict.get("Profit_Loss", 0.0),
+                                "Updated_Bankroll": bet_dict.get("Updated_Bankroll", settled_bet.bankroll_before),
+                                "Status": bet_dict.get("Status", "Pending"),
+                                "Settled_At": bet_dict.get("Settled_At")
+                            }
+                        )
+                        logger.info(f"Bet {settled_bet.bet_id} settled and updated in Excel: {outcome}, P/L: {settled_bet.profit_loss:.2f}, Updated Bankroll: {bet_dict.get('Updated_Bankroll', 0.0):.2f}")
                     except Exception as e:
-                        logger.error(f"Error exporting bet {settled_bet.bet_id} to Excel: {str(e)}")
+                        logger.error(f"Error updating bet {settled_bet.bet_id} in Excel: {str(e)}")
 

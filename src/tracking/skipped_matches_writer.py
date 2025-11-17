@@ -47,10 +47,10 @@ class SkippedMatchesWriter:
             if self.excel_path.exists():
                 df = pd.read_excel(self.excel_path)
             else:
-                # Create new DataFrame with columns
+                # Create new DataFrame with columns (per client requirements)
                 df = pd.DataFrame(columns=[
-                    "Match_Name", "Competition", "Minute", "Status",
-                    "Reason", "BestBack", "BestLay", "Spread_Ticks",
+                    "Date", "Match_Name", "Competition", "Minute_75_Score",
+                    "Targets_List", "Reason", "BestBack", "BestLay", "Spread_Ticks",
                     "Current_Odds", "Timestamp"
                 ])
             
@@ -65,11 +65,20 @@ class SkippedMatchesWriter:
             elif not isinstance(timestamp, datetime):
                 timestamp = datetime.now()
             
+            # Format date (extract date from timestamp)
+            date_str = timestamp.strftime("%Y-%m-%d") if isinstance(timestamp, datetime) else datetime.now().strftime("%Y-%m-%d")
+            
+            # Get targets list if available
+            targets_list = skipped_data.get("targets_list", "")
+            if isinstance(targets_list, (list, set)):
+                targets_list = ", ".join(sorted(str(t) for t in targets_list))
+            
             new_row = {
+                "Date": date_str,
                 "Match_Name": skipped_data.get("match_name", ""),
                 "Competition": skipped_data.get("competition", ""),
-                "Minute": skipped_data.get("minute", ""),
-                "Status": skipped_data.get("status", ""),
+                "Minute_75_Score": skipped_data.get("minute_75_score", skipped_data.get("minute", "")),
+                "Targets_List": targets_list,
                 "Reason": skipped_data.get("reason", ""),
                 "BestBack": skipped_data.get("best_back", 0.0),
                 "BestLay": skipped_data.get("best_lay", 0.0),
