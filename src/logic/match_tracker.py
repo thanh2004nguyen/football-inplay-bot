@@ -194,12 +194,28 @@ class MatchTracker:
                     logger.info(f"Match {self.betfair_event_name}: Ready for bet (minute {self.current_minute})")
                 else:
                     self.state = MatchState.DISQUALIFIED
-                    logger.info(f"✘ Match {self.betfair_event_name}: Disqualified (no goal in {self.start_minute}-{self.end_minute}, no 0-0 exception)")
+                    # Check if 0-0 is in target list to determine correct message
+                    has_zero_zero_in_targets = False
+                    if excel_path and self.current_score == "0-0":
+                        target_scores = get_competition_targets(self.competition_name, excel_path)
+                        if target_scores:
+                            normalized_targets = {normalize_score(t) for t in target_scores}
+                            normalized_score = normalize_score(self.current_score)
+                            has_zero_zero_in_targets = normalized_score in normalized_targets
+                    
+                    if has_zero_zero_in_targets:
+                        # 0-0 is in targets, so this shouldn't happen (should have been qualified at minute 60)
+                        # But if it did, show a different message
+                        logger.info(f"✘ Match {self.betfair_event_name}: Disqualified (no goal in {self.start_minute}-{self.end_minute})")
+                    else:
+                        # 0-0 is NOT in targets, so "no 0-0 exception" is correct
+                        logger.info(f"✘ Match {self.betfair_event_name}: Disqualified (no goal in {self.start_minute}-{self.end_minute}, no 0-0 exception)")
         
         elif self.state == MatchState.QUALIFIED:
-            # Check if ready for bet (minute 75+)
+            # Check if ready for bet (minute 75 only: 75:00 to 75:59)
+            # Entry window is the full 75th minute (75:00 to 75:59)
             # IMPORTANT: Re-check if current score is still in targets at minute 75
-            if self.current_minute >= 75:
+            if 75 <= self.current_minute < 76:
                 # Re-check if current score is still in targets
                 if excel_path:
                     from logic.qualification import get_competition_targets, normalize_score
@@ -220,11 +236,27 @@ class MatchTracker:
                 # Score is still in targets, proceed to READY_FOR_BET
                 self.state = MatchState.READY_FOR_BET
                 logger.info(f"Match {self.betfair_event_name}: Ready for bet (minute {self.current_minute})")
+            elif self.current_minute > 75 and not self.bet_placed:
+                # Minute 75 has passed and bet was not placed - mark as expired
+                # Per client requirement: if conditions never all true during entire 75th minute, match is expired
+                self.state = MatchState.DISQUALIFIED
+                self.discard_reason = "expired-minute-75"
+                self.qualified = False
+                logger.info(f"Match {self.betfair_event_name}: EXPIRED - minute {self.current_minute} > 75, bet not placed during minute 75")
         
         elif self.state == MatchState.READY_FOR_BET:
-            # Continue checking if score is still in targets after becoming READY_FOR_BET
-            # If a goal is scored after 60-74 and moves score outside targets, remove TARGET status
-            if excel_path:
+            # Check if minute 75 has passed without bet placement
+            if self.current_minute > 75 and not self.bet_placed:
+                # Minute 75 has passed and bet was not placed - mark as expired
+                self.state = MatchState.DISQUALIFIED
+                self.discard_reason = "expired-minute-75"
+                self.qualified = False
+                logger.info(f"Match {self.betfair_event_name}: EXPIRED - minute {self.current_minute} > 75, bet not placed during minute 75")
+                return
+            
+            # Continue checking if score is still in targets during minute 75
+            # If a goal is scored during minute 75 and moves score outside targets, remove TARGET status
+            if 75 <= self.current_minute < 76 and excel_path:
                 from logic.qualification import get_competition_targets, normalize_score
                 normalized_score = normalize_score(self.current_score)
                 target_scores = get_competition_targets(self.competition_name, excel_path)
@@ -235,9 +267,9 @@ class MatchTracker:
                     if normalized_score not in normalized_targets:
                         # Score is no longer in targets - disqualify
                         self.state = MatchState.DISQUALIFIED
-                        self.discard_reason = "score-not-target-after-ready"
+                        self.discard_reason = "score-not-target-during-75"
                         self.qualified = False
-                        logger.info(f"Match {self.betfair_event_name}: DISQUALIFIED after READY_FOR_BET - score {self.current_score} not in targets {sorted(target_scores)}")
+                        logger.info(f"Match {self.betfair_event_name}: DISQUALIFIED during minute 75 - score {self.current_score} not in targets {sorted(target_scores)}")
                         return
     
     def get_status(self) -> Dict[str, Any]:

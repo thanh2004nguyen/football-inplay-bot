@@ -58,6 +58,36 @@ Matched: 2/4 event(s) matched and started tracking
   ⏭️  Skipping: minute 75 > 74 - Premier League - Arsenal v Chelsea (2-1) [1-1, 2-1, 2-2] LIVE
 ```
 
+#### 2.5. Matching Refresh (Every 60 minutes)
+```
+[120] 🔄 Refreshing Betfair ↔ LiveScore matching (every 60 minutes)...
+🔄 Match cache cleared for refresh
+🔄 Competition mapping refreshed: 4 competition(s) (no change)
+
+[120] Betfair: 5 live match(es) available (refresh)
+  [1] Gremio v Vasco da Gama (Brazilian Serie A) - 15 market(s)
+  [2] SE Palmeiras v EC Vitoria Salvador (Brazilian Serie A) - 15 market(s)
+  [3] Botafogo FR v Sport Recife (Brazilian Serie A) - 2 market(s)
+  [4] Santos v Mirassol (Brazilian Serie A) - 1 market(s)
+  [5] Flamengo v Corinthians (Brazilian Serie A) - 12 market(s)
+
+Live API: 5 live match(es) available (refresh)
+  [1] Gremio v Vasco da Gama (Brazilian Serie A) - 2-1 @ 67' [LIVE]
+  [2] SE Palmeiras v EC Vitoria Salvador (Brazilian Serie A) - 0-0 @ 60' [LIVE]
+  [3] Botafogo FR v Sport Recife (Brazilian Serie A) - 1-0 @ 65' [LIVE]
+  [4] Santos v Mirassol (Brazilian Serie A) - 0-1 @ 45' [LIVE]
+  [5] Flamengo v Corinthians (Brazilian Serie A) - 0-0 @ 55' [LIVE]
+
+🆕 New matches detected during refresh:
+  - Flamengo v Corinthians (min 55, score 0-0)
+```
+
+**Note:**
+- Matching between Betfair events and LiveScore API matches is automatically refreshed every 60 minutes
+- Match cache is cleared during refresh to allow re-matching of new events
+- New Betfair events that appear after bot startup can now be matched with LiveScore matches that may have become available
+- Competition mapping from Excel is also refreshed during this process
+
 ---
 
 ### 3. Tracking Table (Updated Every Iteration)
@@ -93,8 +123,16 @@ Match READY FOR BET: Gremio v Vasco da Gama
 
 #### 3.3. Discarded Matches (No Goal in 60-74)
 ```
-✘ Match SE Palmeiras v EC Vitoria Salvador: Disqualified (no goal in 60-74, no 0-0 exception)
+✘ Match Botafogo FR v Sport Recife: Disqualified (no goal in 60-74, no 0-0 exception)
 ```
+
+**Note:** 
+- **Important**: The message "Disqualified (no goal in 60-74, no 0-0 exception)" appears **only when 0-0 is NOT in the target list**
+- For matches where 0-0 **IS** in the target list (like Palmeiras with targets [0-0, 0-1, 1-0]):
+  - If the match is 0-0 at minute 60, it will be qualified immediately and stay TARGET (TRACKING)
+  - Match stays TARGET even if no goal is scored between 60-74
+  - At minute 75, if still 0-0 and all other conditions are OK, it becomes TARGET (READY_FOR_BET)
+  - This match will **NOT** show the "no 0-0 exception" message because 0-0 is in the target list
 
 #### 3.4. Updated Tracking Table After Events
 ```
@@ -133,19 +171,25 @@ Botafogo FR v Sport Recife | 70' | 1-0 | 0-0, 1-0, 1-1 | TRACKING
 
 **Note:** Gremio lost TARGET status because a goal after minute 74 changed the score from 2-1 (in targets) to 3-1 (not in targets).
 
-#### 3.6. Skipped Matches Section (At Minute 75)
+#### 3.6. Skipped/Expired Matches Section (After Minute 75)
 ```
 [SKIPPED] Gremio v Vasco da Gama – Reason: spread > 4 ticks
 [SKIPPED] Palmeiras v EC Vitoria – Reason: Under price below reference odds
 [SKIPPED] Botafogo FR v Sport Recife – Reason: Current score not in target list at 75'
 [SKIPPED] Santos v Mirassol – Reason: No Excel config for this score
+[EXPIRED] Flamengo v Corinthians – Reason: Conditions never all true during minute 75
 ```
+
+**Note:**
+- **Skipped matches**: Conditions were checked during minute 75 but one or more conditions failed
+- **Expired matches**: All conditions were never simultaneously true during the entire 75th minute (75:00 to 75:59)
+- Once minute 75 has passed (minute > 75), no bet will be placed for that match
 
 ---
 
 ### 4. Bet Placement
 
-#### 4.1. Bet Placed Successfully (At Exactly Minute 75')
+#### 4.1. Bet Placed Successfully (During Minute 75)
 ```
 Attempting to place lay bet for Gremio v Vasco da Gama (minute 75, score: 2-1)
 
@@ -166,14 +210,17 @@ Bet placed successfully: BetId=123456789, Stake=6.82, Liability=15.00
 Bet matched immediately: BetId=123456789, SizeMatched=6.82
 ```
 
-**Note:** The bet is evaluated and placed at exactly minute 75' (not at 76', 77', etc.). The bot:
-1. Re-checks that current score (2-1) is still in target list
-2. Reads from Excel: stake % (5%) and reference odds (1.75) for this competition and score
-3. Checks Under X.5 best back (1.80) ≥ reference odds (1.75) → OK
-4. Checks Over X.5 spread (3 ticks) ≤ 4 ticks → OK
-5. Calculates liability: Bankroll (300.00) × 5% = 15.00
-6. Calculates lay stake: 15.00 / (3.20 - 1) = 6.82
-7. Places LAY bet on Over 2.5 at best lay (3.10) + 2 ticks = 3.20
+**Note:** The entry window is the **entire 75th minute (75:00 to 75:59)**. The bot:
+1. Checks conditions continuously throughout minute 75
+2. Places bet **as soon as all conditions are satisfied simultaneously** during minute 75
+3. Re-checks that current score (2-1) is still in target list
+4. Reads from Excel: stake % (5%) and reference odds (1.75) for this competition and score
+5. Checks Under X.5 best back (1.80) ≥ reference odds (1.75) → OK
+6. Checks Over X.5 spread (3 ticks) ≤ 4 ticks → OK
+7. Calculates liability: Bankroll (300.00) × 5% = 15.00
+8. Calculates lay stake: 15.00 / (3.20 - 1) = 6.82
+9. Places LAY bet on Over 2.5 at best lay (3.10) + 2 ticks = 3.20
+10. **Never places bet after minute 75 has passed** (i.e., nothing at 76', 77', etc.)
 
 #### 4.2. Updated Table After Bet
 ```
@@ -232,13 +279,21 @@ Matched: 0 Betfair event(s) found, but no Live API matches available
      - Spread ≤ 4 ticks
      - Excel config exists for that competition and score
 6. **Bet Placement**: 
-   - Triggered at exactly minute 75' (not at 76', 77', etc.)
-   - Re-checks all conditions before placing bet
+   - Entry window: **entire 75th minute (75:00 to 75:59)**
+   - Conditions are checked continuously throughout minute 75
+   - Bet is placed **as soon as all conditions are satisfied simultaneously** during minute 75
+   - **Never places bet after minute 75 has passed** (i.e., nothing at 76', 77', etc.)
+   - If conditions never all true during minute 75 → match is expired
    - Shows detailed [BET PLACED] block with all information
 7. **Skipped Matches**: 
    - Logs matches that entered 60-74 tracking but didn't trigger bet at 75'
    - Reasons include: spread > 4 ticks, Under price below reference, score not in targets, no Excel config
 8. **Event Logs**: Clear messages for qualification, bet placement, and discards
+9. **Automatic Matching Refresh**: 
+   - Betfair ↔ LiveScore mapping is automatically refreshed every 60 minutes
+   - Match cache is cleared during refresh to allow new events to be matched
+   - New Betfair events that appear after bot startup can be matched with LiveScore matches that become available
+   - Competition mapping from Excel is also refreshed during this process
 
 ---
 
@@ -257,14 +312,36 @@ Matched: 0 Betfair event(s) found, but no Live API matches available
    - If score was already present before 60' and no goal in 60-74 → NO green dot
    - If match has green dot but later goal changes score → green dot is removed
 
-2. **Bet Trigger**:
-   - Bet is evaluated and placed at exactly minute 75' (not before, not after)
-   - All conditions are re-checked at minute 75'
-   - If any condition fails, match is skipped with clear reason
+2. **Bet Trigger (Entry Window)**:
+   - Entry window: **entire 75th minute (75:00 to 75:59)**
+   - Conditions are checked continuously throughout minute 75
+   - Bet is placed **as soon as all conditions are satisfied simultaneously** during minute 75
+   - All conditions must be true at the same time: score in targets, Under odds OK, spread ≤ 4 ticks, Excel config found, etc.
+   - **Never places bet after minute 75 has passed** (minute > 75)
+   - If conditions never all true during minute 75 → match is expired (no bet placed)
+   - If any condition fails during minute 75 → match is skipped with clear reason
 
 3. **Summary Count**:
    - "🎯 X match(es) ready for bet placement" only counts matches that:
      - Are at minute 75+
      - Still have TARGET status
      - Meet ALL conditions (score, odds, spread, Excel config)
+
+4. **0-0 Exception Logic**:
+   - If 0-0 is in the target list and match is 0-0 at minute 60: match is qualified immediately
+   - Match stays TARGET (TRACKING) even if no goal is scored between 60-74
+   - At minute 75, if still 0-0 and all conditions OK: becomes TARGET (READY_FOR_BET)
+   - Message "Disqualified (no goal in 60-74, no 0-0 exception)" appears ONLY when 0-0 is NOT in target list
+
+5. **Matching Refresh**:
+   - Betfair ↔ LiveScore mapping refreshes automatically every 60 minutes
+   - Match cache is cleared to allow re-matching of new events
+   - This ensures new Betfair events that appear after bot startup can be tracked
+
+6. **Bet Placement Entry Window**:
+   - Entry window is the **entire 75th minute (75:00 to 75:59)**
+   - Bot checks conditions continuously throughout minute 75
+   - Bet is placed **once** as soon as all conditions are satisfied simultaneously
+   - If conditions never all true during minute 75 → match expires (no bet placed)
+   - **Never places bet after minute 75 has passed** (minute > 75)
 

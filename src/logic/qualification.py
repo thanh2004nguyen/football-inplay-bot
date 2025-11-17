@@ -92,15 +92,22 @@ def check_zero_zero_exception(score: str, current_minute: int,
     """
     Check if 0-0 exception applies
     
-    Special case: If at minute 60 the score is 0-0 and 0-0 is part of the targets,
-    then the match should be considered a target immediately (it should get the green dot),
+    Special case: If 0-0 is in the target list (from Excel) and the match is 0-0 
+    at minute 60, then the match should be considered a target immediately (it should get the green dot),
     even if no goal has been scored between 60 and 74 yet.
+    
+    Per client requirement:
+    - If 0-0 is in target list and match is 0-0 at minute 60: match stays TARGET (TRACKING) 
+      even if no goal is scored between 60-74
+    - At minute 75, if still 0-0 and all other conditions OK, it becomes TARGET (READY_FOR_BET)
+    - A match should be "Disqualified (no goal in 60-74, no 0-0 exception)" only when 
+      0-0 is NOT in the target list
     
     Args:
         score: Current score (e.g., "0-0", "1-0")
         current_minute: Current match minute
         competition_name: Competition name
-        zero_zero_exception_competitions: Set of competitions with 0-0 exception
+        zero_zero_exception_competitions: Set of competitions with 0-0 exception (fallback)
         excel_path: Path to Excel file (to check if 0-0 is in targets)
     
     Returns:
@@ -110,28 +117,31 @@ def check_zero_zero_exception(score: str, current_minute: int,
     if score != "0-0":
         return False, "Score is not 0-0"
     
-    # Special case: At minute 60, if 0-0 is in targets, qualify immediately
-    if current_minute == 60 and excel_path:
+    # Check if in 60-74 minute window
+    if not (60 <= current_minute <= 74):
+        return False, f"Not in 60-74 window (current: {current_minute})"
+    
+    # Special case: If 0-0 is in targets (from Excel), qualify immediately
+    # This applies for the entire 60-74 window, not just minute 60
+    # Per client requirement: If 0-0 is in target list and match is 0-0 at minute 60,
+    # match stays TARGET (TRACKING) even if no goal is scored between 60-74
+    if excel_path:
         from logic.qualification import get_competition_targets, normalize_score
         target_scores = get_competition_targets(competition_name, excel_path)
         if target_scores:
             normalized_targets = {normalize_score(t) for t in target_scores}
             normalized_score = normalize_score(score)
             if normalized_score in normalized_targets:
-                logger.info(f"0-0 exception at minute 60: score 0-0 is in targets for '{competition_name}'")
-                return True, "0-0 exception at minute 60 (score in targets)"
+                logger.info(f"0-0 exception: score 0-0 is in targets for '{competition_name}' at minute {current_minute}")
+                return True, "0-0 exception (score in targets)"
     
-    # Check if in 60-74 minute window
-    if not (60 <= current_minute <= 74):
-        return False, f"Not in 60-74 window (current: {current_minute})"
-    
-    # Check if competition is in exception list
+    # Check if competition is in exception list (fallback for old logic)
     if competition_name in zero_zero_exception_competitions:
         logger.info(f"0-0 exception applies for '{competition_name}' at minute {current_minute}")
         return True, "0-0 exception (competition allowed)"
     else:
-        logger.debug(f"0-0 score but competition '{competition_name}' not in exception list")
-        return False, "0-0 but competition not in exception list"
+        logger.debug(f"0-0 score but competition '{competition_name}' not in exception list and 0-0 not in targets")
+        return False, "0-0 but competition not in exception list and 0-0 not in targets"
 
 
 def is_score_reached_in_window(current_score: str, score_at_minute_60: Optional[str],

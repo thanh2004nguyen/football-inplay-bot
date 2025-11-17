@@ -137,11 +137,13 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
                     print(f"  🎯 READY FOR BET: {tracker.betfair_event_name}")
                 
                 # Milestone 3: Execute lay bet if conditions are met
-                # Check both when state changes to READY_FOR_BET and on subsequent updates
+                # Entry window: full 75th minute (75:00 to 75:59)
+                # Check continuously during minute 75, place bet as soon as all conditions are true
+                # Never place bet after minute 75 has passed (minute > 75)
                 # Only attempt if bet not placed and not already skipped
                 if (tracker.state == MatchState.READY_FOR_BET and 
                     betting_service and 
-                    tracker.current_minute >= 75 and 
+                    75 <= tracker.current_minute < 76 and  # Only during minute 75
                     not tracker.bet_placed and
                     not getattr(tracker, 'bet_skipped', False)):
                     match_tracking_config = config.get("match_tracking", {})
@@ -743,6 +745,12 @@ def main():
                         
                         # If refresh needed, get fresh data from Betfair and LiveScore
                         if should_refresh_matching:
+                            # Clear match cache to allow re-matching of new events
+                            # This ensures new Betfair events that appear after bot start can be matched
+                            # with LiveScore matches that may have become available
+                            match_matcher.clear_cache()
+                            logger.info("🔄 Match cache cleared for refresh")
+                            
                             # Refresh competition mapping from Excel first
                             project_root = Path(__file__).parent.parent
                             excel_path = project_root / "competitions" / "Competitions_Results_Odds_Stake.xlsx"
