@@ -84,6 +84,5 @@ def setup_logging(log_config: dict) -> logging.Logger:
             console_handler.emit = safe_emit
         logger.addHandler(console_handler)
     
-    logger.info("Logging initialized successfully")
     return logger
 

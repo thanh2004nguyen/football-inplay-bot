@@ -23,7 +23,7 @@ class ExcelWriter:
         """
         self.excel_path = Path(excel_path)
         self.excel_path.parent.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Excel writer initialized: {excel_path}")
+        # Logging moved to main.py setup checklist
     
     def write_bet_record(self, bet_record):
         """

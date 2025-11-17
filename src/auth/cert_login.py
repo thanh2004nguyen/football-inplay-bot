@@ -187,7 +187,7 @@ class BetfairAuthenticator:
                     # Use 'token' field (not 'sessionToken') as per official documentation
                     self.session_token = result.get('token')
                     masked_token = self._mask_token(self.session_token) if self.session_token else None
-                    logger.info(f"Password login successful! Session token: {masked_token}")
+                    # Logging moved to main.py setup checklist
                     return True, None
                 elif status == 'LIMITED_ACCESS':
                     # Access is limited but session token is provided

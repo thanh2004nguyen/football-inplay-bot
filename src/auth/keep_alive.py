@@ -46,7 +46,7 @@ class KeepAliveManager:
         self.running = True
         self.thread = threading.Thread(target=self._keep_alive_loop, daemon=True)
         self.thread.start()
-        logger.info(f"Keep-alive started (interval: {self.keep_alive_interval}s)")
+        # Logging moved to main.py setup checklist
     
     def stop(self):
         """Stop keep-alive thread"""

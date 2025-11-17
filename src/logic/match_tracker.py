@@ -64,6 +64,7 @@ class MatchTracker:
         self.state = MatchState.WAITING_60
         self.qualified = False
         self.qualification_reason = ""
+        self.discard_reason: Optional[str] = None  # Reason for discard (e.g., "score-not-target", "minute>75", "stale")
         
         # Timestamps
         self.created_at = datetime.now()
@@ -105,7 +106,7 @@ class MatchTracker:
         Args:
             excel_path: Path to Excel file (for early discard check based on Excel targets)
         """
-        from logic.qualification import is_qualified
+        from logic.qualification import is_qualified, get_competition_targets, normalize_score
         
         # Check if match is finished
         if self.current_minute < 0 or self.current_minute > 90:
@@ -113,6 +114,29 @@ class MatchTracker:
                 self.state = MatchState.FINISHED
                 logger.info(f"Match {self.betfair_event_name}: Finished")
             return
+        
+        # MỤC 3.4: Discard if minute > 74
+        if self.current_minute > 74:
+            if self.state != MatchState.DISQUALIFIED:
+                self.state = MatchState.DISQUALIFIED
+                self.discard_reason = "minute>74"
+                logger.info(f"Match {self.betfair_event_name}: DISCARDED - minute {self.current_minute} > 74")
+            return
+        
+        # MỤC 3.3: Discard if current_score not in targets (check every update from minute 60+)
+        if self.current_minute >= 60 and excel_path:
+            normalized_score = normalize_score(self.current_score)
+            target_scores = get_competition_targets(self.competition_name, excel_path)
+            
+            if target_scores:  # Only check if targets exist
+                normalized_targets = {normalize_score(t) for t in target_scores}
+                
+                if normalized_score not in normalized_targets:
+                    if self.state != MatchState.DISQUALIFIED:
+                        self.state = MatchState.DISQUALIFIED
+                        self.discard_reason = "score-not-target"
+                        logger.info(f"Match {self.betfair_event_name}: DISCARDED - score {self.current_score} not in targets {sorted(target_scores)} (minute {self.current_minute})")
+                    return
         
         # State transitions
         if self.state == MatchState.WAITING_60:
@@ -157,7 +181,7 @@ class MatchTracker:
                     logger.info(f"Match {self.betfair_event_name}: Ready for bet (minute {self.current_minute})")
                 else:
                     self.state = MatchState.DISQUALIFIED
-                    logger.info(f"Match {self.betfair_event_name}: Disqualified (no goal in {self.start_minute}-{self.end_minute}, no 0-0 exception)")
+                    logger.info(f"✘ Match {self.betfair_event_name}: Disqualified (no goal in {self.start_minute}-{self.end_minute}, no 0-0 exception)")
         
         elif self.state == MatchState.QUALIFIED:
             # Check if ready for bet (minute 75+)
@@ -182,6 +206,7 @@ class MatchTracker:
             "state": self.state.value,
             "qualified": self.qualified,
             "qualification_reason": self.qualification_reason,
+            "discard_reason": self.discard_reason,
             "goals_count": len([g for g in self.goals if not g.get('cancelled', False)]),
             "last_update": self.last_update.isoformat(),
             "qualified_at": self.qualified_at.isoformat() if self.qualified_at else None
@@ -198,7 +223,7 @@ class MatchTrackerManager:
     def __init__(self):
         """Initialize match tracker manager"""
         self.trackers: Dict[str, MatchTracker] = {}  # Key: betfair_event_id
-        logger.info("Match tracker manager initialized")
+        # Logging moved to main.py setup checklist
     
     def add_tracker(self, tracker: MatchTracker):
         """
@@ -246,5 +271,12 @@ class MatchTrackerManager:
         finished = [event_id for event_id, tracker in self.trackers.items() 
                    if tracker.state == MatchState.FINISHED]
         for event_id in finished:
+            self.remove_tracker(event_id)
+    
+    def cleanup_discarded(self):
+        """Remove trackers for discarded matches (MỤC 3.7)"""
+        discarded = [event_id for event_id, tracker in self.trackers.items() 
+                     if tracker.state == MatchState.DISQUALIFIED]
+        for event_id in discarded:
             self.remove_tracker(event_id)
 

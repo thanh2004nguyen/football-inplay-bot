@@ -6,10 +6,35 @@ Also handles early discard if match is out of target at minute 60 (based on Exce
 """
 import logging
 import pandas as pd
+import re
 from typing import List, Dict, Any, Tuple, Set, Optional
 from config.competition_mapper import normalize_text
 
 logger = logging.getLogger("BetfairBot")
+
+# Cache for competition maps (competition_name -> {targets, min_odds, stake})
+_competition_map_cache: Dict[str, Dict[str, Any]] = {}
+_excel_path_cache: Optional[str] = None
+
+
+def normalize_score(score: str) -> str:
+    """
+    Normalize score format for comparison
+    - Remove spaces
+    - Convert ':' to '-'
+    - Strip whitespace
+    
+    Args:
+        score: Score string (e.g., "1 : 0", "1-0", "2:1")
+    
+    Returns:
+        Normalized score (e.g., "1-0", "2-1")
+    """
+    if not score:
+        return ""
+    # Remove spaces, convert : to -, strip
+    normalized = score.strip().replace(" ", "").replace(":", "-")
+    return normalized
 
 
 def filter_cancelled_goals(goals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -92,18 +117,23 @@ def check_zero_zero_exception(score: str, current_minute: int,
         return False, "0-0 but competition not in exception list"
 
 
-def get_excel_targets_for_competition(competition_name: str, excel_path: str) -> Set[str]:
+def load_competition_map_from_excel(excel_path: str) -> Dict[str, Dict[str, Any]]:
     """
-    Get all Result (score) targets from Excel for a specific competition
-    Supports both old format (Competition column) and new format (Competition-Live column)
+    Load competition map from Excel: competition -> {targets, min_odds, stake}
+    Cache the result in memory
     
     Args:
-        competition_name: Competition name from Live Score API (will be matched with Competition-Live or Competition)
         excel_path: Path to Excel file
     
     Returns:
-        Set of Result values (scores) available for this competition, empty set if not found
+        Dictionary: {competition_name: {"targets": Set[str], "min_odds": float, "stake": float}}
     """
+    global _competition_map_cache, _excel_path_cache
+    
+    # Return cached if same Excel file
+    if _excel_path_cache == excel_path and _competition_map_cache:
+        return _competition_map_cache
+    
     try:
         df = pd.read_excel(excel_path)
         
@@ -112,90 +142,157 @@ def get_excel_targets_for_competition(competition_name: str, excel_path: str) ->
         
         if not has_competition_live and not has_competition_old:
             logger.warning(f"Neither 'Competition-Live' nor 'Competition' column found in Excel file")
-            return set()
+            return {}
         
         if 'Result' not in df.columns:
             logger.warning(f"Column 'Result' not found in Excel file")
-            return set()
+            return {}
         
-        # Normalize competition name for matching
-        # Support format: "ID_Name" (e.g., "4_Serie A") or just "Name" (e.g., "Serie A")
-        normalized_competition = normalize_text(competition_name)
+        # Check for Min_Odds and Stake columns (optional)
+        has_min_odds = 'Min_Odds' in df.columns or 'Min Odds' in df.columns
+        min_odds_column = 'Min_Odds' if 'Min_Odds' in df.columns else ('Min Odds' if 'Min Odds' in df.columns else None)
+        has_stake = 'Stake' in df.columns
         
-        # Extract ID and name if format is "ID_Name"
-        competition_id = None
-        competition_name_only = competition_name
-        if "_" in competition_name:
-            parts = competition_name.split("_", 1)
-            try:
-                competition_id = parts[0].strip()
-                competition_name_only = parts[1].strip()
-            except:
-                pass
+        competition_map = {}
         
-        # Find matching rows - Priority: Competition-Live, then Competition
-        matches = pd.DataFrame()
-        
-        if has_competition_live:
-            # Try matching with Competition-Live column (new format)
-            # Support both "ID_Name" format and "Name" format
-            def match_competition_live(cell_value):
-                if pd.isna(cell_value):
-                    return False
-                cell_str = str(cell_value).strip()
-                
-                # Exact match
-                if cell_str == competition_name:
-                    return True
-                
-                # Match with normalized text
-                if normalize_text(cell_str) == normalized_competition:
-                    return True
-                
-                # If competition_name is "ID_Name" format, also try matching just the name part
-                if competition_id and competition_name_only:
-                    # Match with "ID_Name" format in Excel
-                    if cell_str == f"{competition_id}_{competition_name_only}":
-                        return True
-                    # Match with just name part
-                    if normalize_text(cell_str) == normalize_text(competition_name_only):
-                        return True
-                
-                # If Excel has "ID_Name" format, extract and match name part
-                if "_" in cell_str:
-                    try:
-                        excel_parts = cell_str.split("_", 1)
-                        excel_name = excel_parts[1].strip()
-                        if normalize_text(excel_name) == normalize_text(competition_name_only):
-                            return True
-                    except:
-                        pass
-                
-                return False
+        # Process each row
+        for idx, row in df.iterrows():
+            # Get competition name (priority: Competition-Live, then Competition)
+            competition_name = None
+            if has_competition_live and pd.notna(row.get('Competition-Live')):
+                competition_name = str(row['Competition-Live']).strip()
+            elif has_competition_old and pd.notna(row.get('Competition')):
+                competition_name = str(row['Competition']).strip()
             
-            matches = df[df['Competition-Live'].apply(match_competition_live)]
+            if not competition_name:
+                continue
+            
+            # Get Result (normalized)
+            result = None
+            if pd.notna(row.get('Result')):
+                result = normalize_score(str(row['Result']).strip())
+            
+            if not result:
+                continue
+            
+            # Get Min_Odds (optional)
+            min_odds = None
+            if has_min_odds and min_odds_column and pd.notna(row.get(min_odds_column)):
+                try:
+                    min_odds = float(row[min_odds_column])
+                except (ValueError, TypeError):
+                    pass
+            
+            # Get Stake (optional)
+            stake = None
+            if has_stake and pd.notna(row.get('Stake')):
+                try:
+                    stake = float(row['Stake'])
+                except (ValueError, TypeError):
+                    pass
+            
+            # Add to map
+            if competition_name not in competition_map:
+                competition_map[competition_name] = {
+                    "targets": set(),
+                    "min_odds": min_odds,
+                    "stake": stake
+                }
+            
+            competition_map[competition_name]["targets"].add(result)
         
-        if matches.empty and has_competition_old:
-            # Fallback to Competition column (old format)
-            matches = df[
-                (df['Competition'].astype(str).str.strip() == competition_name) |
-                (df['Competition'].astype(str).str.strip().apply(lambda x: normalize_text(x) == normalized_competition))
-            ]
+        # Cache the result
+        _competition_map_cache = competition_map
+        _excel_path_cache = excel_path
         
-        if matches.empty:
-            logger.debug(f"No competition match found for: {competition_name} (normalized: {normalized_competition})")
-            return set()
-        
-        # Get unique Result values
-        results = matches['Result'].astype(str).str.strip().unique().tolist()
-        return set(results)
+        logger.info(f"Loaded competition map from Excel: {len(competition_map)} competition(s)")
+        return competition_map
         
     except FileNotFoundError:
         logger.warning(f"Excel file not found: {excel_path}")
-        return set()
+        return {}
     except Exception as e:
-        logger.error(f"Error reading Excel targets: {str(e)}")
+        logger.error(f"Error loading competition map from Excel: {str(e)}")
+        return {}
+
+
+def get_competition_targets(competition_name: str, excel_path: str) -> Set[str]:
+    """
+    Get target scores for a competition from cached map
+    Supports both "ID_Name" format and "Name" format
+    
+    Args:
+        competition_name: Competition name (e.g., "79_Segunda Division" or "Segunda Division")
+        excel_path: Path to Excel file
+    
+    Returns:
+        Set of normalized target scores
+    """
+    # Load map if not cached
+    competition_map = load_competition_map_from_excel(excel_path)
+    
+    if not competition_map:
         return set()
+    
+    # Normalize competition name for matching
+    normalized_competition = normalize_text(competition_name)
+    
+    # Extract ID and name if format is "ID_Name"
+    competition_id = None
+    competition_name_only = competition_name
+    if "_" in competition_name:
+        parts = competition_name.split("_", 1)
+        try:
+            competition_id = parts[0].strip()
+            competition_name_only = parts[1].strip()
+        except:
+            pass
+    
+    # Try exact match first
+    if competition_name in competition_map:
+        return competition_map[competition_name]["targets"]
+    
+    # Try normalized match
+    for excel_comp_name, comp_data in competition_map.items():
+        if normalize_text(excel_comp_name) == normalized_competition:
+            return comp_data["targets"]
+        
+        # If competition_name is "ID_Name" format, try matching just the name part
+        if competition_id and competition_name_only:
+            if excel_comp_name == f"{competition_id}_{competition_name_only}":
+                return comp_data["targets"]
+            if normalize_text(excel_comp_name) == normalize_text(competition_name_only):
+                return comp_data["targets"]
+            
+            # If Excel has "ID_Name" format, extract and match name part
+            if "_" in excel_comp_name:
+                try:
+                    excel_parts = excel_comp_name.split("_", 1)
+                    excel_name = excel_parts[1].strip()
+                    if normalize_text(excel_name) == normalize_text(competition_name_only):
+                        return comp_data["targets"]
+                except:
+                    pass
+    
+    logger.debug(f"No competition match found for: {competition_name}")
+    return set()
+
+
+def get_excel_targets_for_competition(competition_name: str, excel_path: str) -> Set[str]:
+    """
+    Get all Result (score) targets from Excel for a specific competition
+    Supports both old format (Competition column) and new format (Competition-Live column)
+    Uses cached map for better performance
+    
+    Args:
+        competition_name: Competition name from Live Score API (will be matched with Competition-Live or Competition)
+        excel_path: Path to Excel file
+    
+    Returns:
+        Set of Result values (scores) available for this competition, empty set if not found
+    """
+    # Use new cached function
+    return get_competition_targets(competition_name, excel_path)
 
 
 def get_possible_scores_after_one_goal(current_score: str) -> Set[str]:

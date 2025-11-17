@@ -118,7 +118,7 @@ class LiveScoreClient:
             'Accept': 'application/json'
         })
         
-        logger.info(f"Live Score API client initialized (rate limit: {rate_limit_per_day}/day)")
+        # Logging moved to main.py setup checklist
     
     def _make_request(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """
@@ -215,14 +215,19 @@ class LiveScoreClient:
                     # Check status
                     status = str(match.get("status", "")).upper()
                     
-                    # Skip matches that are not started, scheduled, or postponed
+                    # Skip matches that are not started, scheduled, postponed, or finished
                     if "NOT STARTED" in status or "SCHEDULED" in status or "POSTPONED" in status:
                         logger.debug(f"Skipping match (not started): {match.get('home', {}).get('name', 'N/A')} v {match.get('away', {}).get('name', 'N/A')} - Status: {status}")
                         continue
                     
-                    # Check minute - if -1, match is not live
+                    # MỤC 3.5: Skip FINISHED matches
+                    if "FINISHED" in status:
+                        logger.debug(f"Skipping match (finished): {match.get('home', {}).get('name', 'N/A')} v {match.get('away', {}).get('name', 'N/A')} - Status: {status}")
+                        continue
+                    
+                    # Check minute - if -1 or > 90, match is not live
                     minute = parse_match_minute(match)
-                    if minute < 0:
+                    if minute < 0 or minute > 90:
                         logger.debug(f"Skipping match (not live): {match.get('home', {}).get('name', 'N/A')} v {match.get('away', {}).get('name', 'N/A')} - Minute: {minute}")
                         continue
                     

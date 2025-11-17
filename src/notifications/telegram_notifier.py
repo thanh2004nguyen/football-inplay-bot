@@ -37,10 +37,6 @@ class TelegramNotifier:
             return
         
         self.api_url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
-        
-        logger.info(f"Telegram notifier initialized")
-        logger.info(f"  - Bot Token: {self.bot_token[:20]}...")
-        logger.info(f"  - Chat ID: {self.chat_id}")
     
     def _send_message(self, text: str, parse_mode: str = "HTML") -> bool:
         """

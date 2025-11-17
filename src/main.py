@@ -6,213 +6,63 @@ import sys
 import time
 import requests
 from pathlib import Path
-from typing import Dict, Any, Set, Optional
+from typing import Dict, Any
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from config.loader import load_config, validate_config
-from config.competition_mapper import get_competition_ids_from_excel, get_competitions_with_zero_zero_exception
 from betfair.market_filter import filter_match_specific_markets
 from core.logging_setup import setup_logging
 from auth.cert_login import BetfairAuthenticator
 from auth.keep_alive import KeepAliveManager
-from betfair.market_service import MarketService
-from football_api.live_score_client import LiveScoreClient
-from football_api.parser import parse_match_score, parse_match_minute, parse_goals_timeline, parse_match_teams, parse_match_competition
-from football_api.matcher import MatchMatcher
+from football_api.parser import (parse_match_score, parse_match_minute, parse_goals_timeline,
+                                 parse_match_teams, parse_match_competition)
 from logic.match_tracker import MatchTrackerManager, MatchTracker, MatchState
 from logic.bet_executor import execute_lay_bet
-from tracking.bet_tracker import BetTracker
-from tracking.excel_writer import ExcelWriter
-from tracking.skipped_matches_writer import SkippedMatchesWriter
-from betfair.betting_service import BettingService
-from notifications.sound_notifier import SoundNotifier
 from notifications.email_notifier import EmailNotifier
-from notifications.telegram_notifier import TelegramNotifier
+from utils import (format_tracking_table, format_boxed_message, 
+                   process_finished_matches, perform_login_with_retry, initialize_all_services)
 import logging
 from datetime import datetime
 
 logger = logging.getLogger("BetfairBot")
 
 
-def format_boxed_message(message: str) -> str:
-    """
-    Format a message with a box border
-    
-    Args:
-        message: Message to display in box
-    
-    Returns:
-        Formatted string with box border
-    """
-    # Calculate box width (minimum 60, or message length + 4 for padding)
-    width = max(60, len(message) + 4)
-    
-    # Create box
-    top_border = "┌" + "─" * (width - 2) + "┐"
-    bottom_border = "└" + "─" * (width - 2) + "┘"
-    
-    # Center message in box
-    padding = (width - len(message) - 2) // 2
-    left_padding = " " * padding
-    right_padding = " " * (width - len(message) - 2 - padding)
-    content = f"│{left_padding}{message}{right_padding}│"
-    
-    return f"{top_border}\n{content}\n{bottom_border}"
-
-
-def determine_bet_outcome(final_score: str, selection: str, target_over: Optional[float] = None) -> str:
-    """
-    Determine bet outcome from final score for Over/Under markets
-    
-    Args:
-        final_score: Final match score (e.g., "2-1", "0-0")
-        selection: Bet selection (e.g., "Under 2.5", "Over 2.5")
-        target_over: Target Over X.5 value (e.g., 2.5 for Over 2.5)
-    
-    Returns:
-        "Won", "Lost", or "Void"
-    """
-    try:
-        # Parse final score
-        parts = final_score.split("-")
-        if len(parts) != 2:
-            logger.warning(f"Invalid score format: {final_score}")
-            return "Void"
-        
-        home_goals = int(parts[0].strip())
-        away_goals = int(parts[1].strip())
-        total_goals = home_goals + away_goals
-        
-        # Extract target from selection if target_over not provided
-        if target_over is None:
-            # Try to extract from selection (e.g., "Over 2.5" -> 2.5)
-            import re
-            match = re.search(r'(\d+\.?\d*)', selection)
-            if match:
-                target_over = float(match.group(1))
-            else:
-                logger.warning(f"Could not extract target from selection: {selection}")
-                return "Void"
-        
-        # Determine outcome based on selection type
-        selection_lower = selection.lower()
-        
-        if "over" in selection_lower:
-            # Over X.5: Won if total_goals > target_over
-            if total_goals > target_over:
-                return "Won"
-            else:
-                return "Lost"
-        elif "under" in selection_lower:
-            # Under X.5: Won if total_goals < target_over
-            if total_goals < target_over:
-                return "Won"
-            else:
-                return "Lost"
-        else:
-            logger.warning(f"Unknown selection type: {selection}")
-            return "Void"
-            
-    except (ValueError, IndexError) as e:
-        logger.warning(f"Error determining bet outcome: {str(e)}")
-        return "Void"
-
-
-def process_finished_matches(match_tracker_manager: MatchTrackerManager,
-                             bet_tracker: Optional[BetTracker],
-                             excel_writer: Optional[ExcelWriter],
-                             target_over: Optional[float] = None,
-                             telegram_notifier: Optional[Any] = None):
-    """
-    Process finished matches: settle bets and export to Excel
-    
-    Args:
-        match_tracker_manager: Match tracker manager
-        bet_tracker: Bet tracker instance (None if not initialized)
-        excel_writer: Excel writer instance (None if not initialized)
-        target_over: Target Over X.5 value for determining bet outcomes
-    """
-    if not bet_tracker or not excel_writer:
-        return
-    
-    # Get all finished trackers
-    all_trackers = match_tracker_manager.get_all_trackers()
-    finished_trackers = [t for t in all_trackers if t.state == MatchState.FINISHED]
-    
-    for tracker in finished_trackers:
-        # Get final score
-        final_score = tracker.current_score
-        
-        # Find bets for this match
-        bets = bet_tracker.get_bets_by_match_id(tracker.betfair_event_id)
-        
-        if bets:
-            logger.info(f"Processing {len(bets)} bet(s) for finished match: {tracker.betfair_event_name} (Final: {final_score})")
-            
-            for bet_record in bets:
-                # Skip if already settled
-                if bet_record.outcome is not None:
-                    continue
-                
-                # Determine outcome
-                outcome = determine_bet_outcome(
-                    final_score=final_score,
-                    selection=bet_record.selection,
-                    target_over=target_over
-                )
-                
-                # Settle bet
-                settled_bet = bet_tracker.settle_bet(bet_record.bet_id, outcome)
-                
-                if settled_bet:
-                    # Send Telegram notification for Won/Lost bets only
-                    if telegram_notifier and outcome in ["Won", "Lost"]:
-                        try:
-                            telegram_notifier.send_bet_settled_notification(
-                                bet_record=settled_bet,
-                                outcome=outcome,
-                                profit_loss=settled_bet.profit_loss,
-                                final_score=final_score,
-                                event_name=tracker.betfair_event_name
-                            )
-                        except Exception as e:
-                            logger.error(f"Failed to send Telegram bet settled notification: {str(e)}")
-                    
-                    # Export to Excel
-                    try:
-                        bet_dict = settled_bet.to_dict()
-                        excel_writer.append_bet_record(bet_dict)
-                        logger.info(f"Bet {settled_bet.bet_id} settled and exported: {outcome}, P/L: {settled_bet.profit_loss:.2f}")
-                    except Exception as e:
-                        logger.error(f"Error exporting bet {settled_bet.bet_id} to Excel: {str(e)}")
-
-
 def main():
     """Main function for Milestone 2"""
-    print("=" * 60)
-    print("Betfair Italy Bot - Milestone 2")
-    print("Authentication, Market Detection & Live Data Integration")
-    print("=" * 60)
+    # Track last live count to avoid duplicate logging (only for Live API, not Betfair)
+    if not hasattr(main, '_last_live_count'):
+        main._last_live_count = 0
     
     try:
         # Load configuration
-        print("\n[1/6] Loading configuration...")
         config = load_config()
         validate_config(config)
-        print("✓ Configuration loaded and validated")
         
         # Setup logging
-        print("\n[2/6] Setting up logging...")
         logger = setup_logging(config["logging"])
-        logger.info("=" * 60)
-        logger.info("Betfair Italy Bot - Milestone 2 Started")
-        logger.info("=" * 60)
-        print("✓ Logging initialized")
+        
+        # Setup Checklist
+        checklist_items = []
+        
+        # 1. Email Notifications
+        email_notifier = None
+        notifications_config = config.get("notifications", {})
+        if notifications_config.get("email_enabled", False):
+            try:
+                email_notifier = EmailNotifier(notifications_config)
+                email_config = notifications_config.get("email", {})
+                sender = email_config.get("sender_email", "N/A")
+                recipient = email_config.get("recipient_email", "N/A")
+                checklist_items.append(f"  ✓ Email notifications: {sender} → {recipient}")
+            except Exception as e:
+                logger.warning(f"Failed to initialize email notifier: {str(e)}")
+                checklist_items.append(f"  ✗ Email notifications: Disabled (initialization failed)")
+        else:
+            checklist_items.append(f"  ✗ Email notifications: Disabled")
         
         # Initialize authenticator
-        print("\n[3/6] Initializing authentication...")
         betfair_config = config["betfair"]
         use_password_login = betfair_config.get("use_password_login", False)
         
@@ -229,148 +79,25 @@ def main():
             login_endpoint=betfair_config.get("login_endpoint")
         )
         
-        login_method = "Password-based" if use_password_login else "Certificate-based"
-        print(f"✓ Authenticator initialized ({login_method} login)")
-        
-        # Initialize Email Notifier (Milestone 4) - before login to detect login issues
-        email_notifier = None
-        notifications_config = config.get("notifications", {})
-        if notifications_config.get("email_enabled", False):
-            try:
-                email_notifier = EmailNotifier(notifications_config)
-                logger.info("Email notifier initialized")
-                print("✓ Email notifications enabled")
-            except Exception as e:
-                logger.warning(f"Failed to initialize email notifier: {str(e)}")
-                print("⚠ Email notifications disabled (initialization failed)")
-        
         # Perform login with retry logic
-        print("\n[4/6] Logging in to Betfair Italy Exchange...")
-        retry_delay = config.get("session", {}).get("retry_delay_seconds", 10)
-        max_login_attempts = 999999  # Infinite retry
-        login_attempt = 0
-        session_token = None
-        # Email flags: Track if email already sent to avoid sending multiple times
-        # These flags persist for the entire bot session (even if re-login happens later)
-        email_sent_for_maintenance = False  # Track if email already sent for maintenance
-        email_sent_for_terms = False  # Track if email already sent for terms
-        
-        while login_attempt < max_login_attempts:
-            try:
-                login_attempt += 1
-                
-                # Use password login or certificate login based on config
-                if use_password_login:
-                    success, error = authenticator.login_with_password()
-                else:
-                    success, error = authenticator.login()
-                
-                if success:
-                    session_token = authenticator.get_session_token()
-                    logger.info("Login successful - proceeding to market detection")
-                    print("✓ Login successful!")
-                    break
-                else:
-                    # Check if it's a maintenance/regulator error
-                    is_maintenance_error = "UNAVAILABLE_CONNECTIVITY_TO_REGULATOR_IT" in str(error)
-                    
-                    # Check if it's a connectivity/regulator error (should retry)
-                    is_retryable_error = is_maintenance_error or any(keyword in str(error) for keyword in [
-                        "UNAVAILABLE_CONNECTIVITY",
-                        "CONNECTION",
-                        "TIMEOUT",
-                        "NETWORK"
-                    ])
-                    
-                    # Only show retry message on first attempt and every 10 attempts (1, 11, 21, 31...)
-                    should_show_retry = (login_attempt == 1) or (login_attempt % 10 == 1)
-                    
-                    if is_maintenance_error:
-                        # Maintenance error - show maintenance message only once
-                        if login_attempt == 1:
-                            print(f"⚠ Betfair Italy Exchange is under maintenance. Check status: https://www.betfair.it")
-                            logger.warning(f"Betfair maintenance detected: {error}")
-                            logger.info("Check service status at: https://www.betfair.it")
-                            
-                            # Send email notification for maintenance (only once per bot session)
-                            # Check both conditions: first attempt AND email not sent yet
-                            if login_attempt == 1 and email_notifier and not email_sent_for_maintenance:
-                                try:
-                                    email_notifier.send_betfair_maintenance_alert(str(error))
-                                    email_sent_for_maintenance = True  # Set flag to prevent sending again
-                                    logger.info("Email alert sent for Betfair maintenance (will not send again this session)")
-                                except Exception as e:
-                                    logger.error(f"Failed to send maintenance email: {str(e)}")
-                        
-                        # Only show retry message on first attempt and every 10 attempts
-                        if should_show_retry:
-                            print(f"   Retrying in {retry_delay} seconds... (attempt {login_attempt})")
-                        
-                        try:
-                            time.sleep(retry_delay)
-                        except KeyboardInterrupt:
-                            logger.info("Interrupted by user during login retry")
-                            print("\n\nStopping...")
-                            return 1
-                    elif is_retryable_error:
-                        # Other retryable errors - only show on first attempt
-                        if login_attempt == 1:
-                            print(f"⚠ Login failed: {error}")
-                        
-                        # Only show retry message on first attempt and every 10 attempts
-                        if should_show_retry:
-                            print(f"   Retrying in {retry_delay} seconds... (attempt {login_attempt})")
-                        
-                        try:
-                            time.sleep(retry_delay)
-                        except KeyboardInterrupt:
-                            logger.info("Interrupted by user during login retry")
-                            print("\n\nStopping...")
-                            return 1
-                    else:
-                        # Non-retryable error (e.g., invalid credentials, contract acceptance)
-                        # Check if it's a terms/conditions error
-                        error_str = str(error).upper()
-                        is_terms_error = any(keyword in error_str for keyword in [
-                            "TERMS", "CONDITIONS", "ACCEPT", "CONFIRMATION", "CONTRACT",
-                            "AGREEMENT", "ACCEPTANCE", "REQUIRED"
-                        ])
-                        
-                        # Only log to file for retry attempts, print to console only on first attempt
-                        if login_attempt == 1:
-                            logger.error(f"Login failed: {error}")
-                            print(f"✗ Login failed: {error}")
-                            print(f"\nPlease check: https://www.betfair.it/ app_key, Username, password.")
-                            
-                            # Send email notification for terms/conditions (only once per bot session)
-                            # Check both conditions: first attempt AND email not sent yet AND is terms error
-                            if login_attempt == 1 and is_terms_error and email_notifier and not email_sent_for_terms:
-                                try:
-                                    email_notifier.send_betfair_terms_confirmation_alert(str(error))
-                                    email_sent_for_terms = True  # Set flag to prevent sending again
-                                    logger.info("Email alert sent for Betfair terms confirmation (will not send again this session)")
-                                except Exception as e:
-                                    logger.error(f"Failed to send terms confirmation email: {str(e)}")
-                        # For subsequent attempts, already logged above with logger.debug()
-                        
-                        # Only show retry message on first attempt and every 10 attempts
-                        if should_show_retry:
-                            print(f"\nRetrying in {retry_delay} seconds... (attempt {login_attempt}) (Press Ctrl+C to stop)")
-                        
-                        try:
-                            time.sleep(retry_delay)
-                        except KeyboardInterrupt:
-                            logger.info("Interrupted by user during login retry")
-                            print("\n\nStopping...")
-                            return 1
-            except KeyboardInterrupt:
-                # Handle Ctrl+C even when it happens during HTTP request
-                logger.info("Interrupted by user during login attempt")
-                print("\n\nStopping...")
-                return 1
+        session_token, email_flags = perform_login_with_retry(config, authenticator, email_notifier)
         
         if not session_token:
-            logger.error("Failed to obtain session token after all retry attempts")
+            logger.error("Failed to obtain session token")
+            login_method_str = "Password" if use_password_login else "Certificate"
+            checklist_items.append(f"  ✗ Login ({login_method_str}): Failed")
+            # Print checklist before exiting
+            max_width = max(len(item) for item in checklist_items) if checklist_items else 60
+            box_width = max_width + 4
+            logger.info("")
+            logger.info("┌" + "─" * (box_width - 2) + "┐")
+            logger.info("│" + " " * ((box_width - 16) // 2) + "Setup Checklist" + " " * ((box_width - 16 + 1) // 2) + "│")
+            logger.info("├" + "─" * (box_width - 2) + "┤")
+            for item in checklist_items:
+                padded_item = item + " " * (box_width - len(item) - 3)
+                logger.info(f"│{padded_item}│")
+            logger.info("└" + "─" * (box_width - 2) + "┘")
+            logger.info("")
             print("✗ Failed to login after multiple attempts")
             return 1
         
@@ -378,261 +105,56 @@ def main():
         from core.service_factory import ServiceFactory
         service_factory = ServiceFactory(config)
         
-        # Initialize market service first (needed for callback)
-        print("\n[Market Detection] Initializing market service...")
-        # Get max data weight points from config (default 190)
-        betfair_api_config = config.get("betfair_api", {})
-        max_data_weight_points = betfair_api_config.get("max_data_weight_points", 190)
-        
-        # Use factory to create market service (real or mock)
-        market_service = service_factory.create_market_service(
-            app_key=betfair_config["app_key"],
-            session_token=session_token,
-            api_endpoint=betfair_config["api_endpoint"],
-            account_endpoint=betfair_config.get("account_endpoint", "https://api.betfair.com/exchange/account/rest/v1.0")
+        # Initialize all services and build checklist
+        services, service_checklist = initialize_all_services(
+            config, session_token, service_factory, authenticator, use_password_login
         )
+        checklist_items.extend(service_checklist)
         
-        # Set max_data_weight_points for real MarketService (mock service doesn't need it)
-        if not service_factory.is_test_mode and hasattr(market_service, 'max_data_weight_points'):
-            market_service.max_data_weight_points = max_data_weight_points
+        # Extract services from dict
+        market_service = services['market_service']
+        keep_alive_manager = services['keep_alive_manager']
+        live_score_client = services.get('live_score_client')
+        match_matcher = services.get('match_matcher')
+        match_tracker_manager = services.get('match_tracker_manager')
+        zero_zero_exception_competitions = services.get('zero_zero_exception_competitions', set())
+        bet_tracker = services.get('bet_tracker')
+        excel_writer = services.get('excel_writer')
+        skipped_matches_writer = services['skipped_matches_writer']
+        betting_service = services.get('betting_service')
+        sound_notifier = services.get('sound_notifier')
+        telegram_notifier = services.get('telegram_notifier')
+        event_type_ids = services['event_type_ids']
+        competition_ids = services['competition_ids']
         
-        if service_factory.is_test_mode:
-            print("✓ Market service initialized (TEST MODE)")
-        else:
-            print("✓ Market service initialized")
-        
-        # Initialize keep-alive (callback will be set after creation)
-        print("\n[5/6] Starting keep-alive manager...")
-        keep_alive_interval = config["session"].get("keep_alive_interval_seconds", 300)
-        keep_alive_manager = KeepAliveManager(
-            app_key=betfair_config["app_key"],
-            session_token=session_token,
-            keep_alive_interval=keep_alive_interval
-        )
-        
-        # Define callback for session expiry detected by keep-alive
-        def handle_session_expired():
-            """Callback when keep-alive detects session expiry"""
-            # Note: We do NOT send email notifications here to avoid spam.
-            # Email notifications are only sent during initial login (first attempt).
-            # Re-login failures are logged but do not trigger email alerts.
-            logger.warning("Session expiry detected by keep-alive, attempting re-login...")
-            try:
-                # Use password login or certificate login based on config
-                if use_password_login:
-                    success, error = authenticator.login_with_password()
-                else:
-                    success, error = authenticator.login()
-                if success:
-                    new_token = authenticator.get_session_token()
-                    market_service.update_session_token(new_token)
-                    keep_alive_manager.update_session_token(new_token)
-                    # Update betting service if it exists (Milestone 3)
-                    if betting_service:
-                        betting_service.update_session_token(new_token)
-                    logger.info("Re-login successful after keep-alive detected expiry")
-                else:
-                    logger.warning(f"Re-login failed after keep-alive expiry: {error}")
-            except Exception as e:
-                logger.error(f"Error during re-login from keep-alive callback: {str(e)}")
-        
-        # Set callback after keep_alive_manager is created
-        keep_alive_manager.on_session_expired = handle_session_expired
-        keep_alive_manager.start()
-        print("✓ Keep-alive manager started")
-        
-        # Initialize Live Score API client
-        print("\n[6/6] Initializing Live Score API client...")
-        live_score_config = config.get("live_score_api", {})
-        if not live_score_config:
-            logger.warning("Live Score API config not found, skipping Live Score integration")
-            print("⚠ Live Score API config not found")
-            live_score_client = None
-            match_matcher = None
-            match_tracker_manager = None
-            zero_zero_exception_competitions: Set[str] = set()
-        else:
-            # Get rate limit from config, or auto-set based on plan
-            api_plan = live_score_config.get("api_plan", "trial")
-            rate_limit = live_score_config.get("rate_limit_per_day")
-            
-            # If not specified in config, auto-set based on plan
-            if rate_limit is None:
-                if api_plan == "paid":
-                    rate_limit = 14500
-                else:
-                    rate_limit = 1500
-                logger.info(f"Rate limit not specified in config, auto-set to {rate_limit} based on plan: {api_plan}")
-            else:
-                logger.info(f"Using rate limit from config: {rate_limit}/day")
-            
-            # Use factory to create Live Score client (real or mock)
-            live_score_client = service_factory.create_live_score_client(
-                api_key=live_score_config.get("api_key", ""),
-                api_secret=live_score_config.get("api_secret", ""),
-                base_url=live_score_config.get("base_url", "https://livescore-api.com/api-client"),
-                rate_limit_per_day=rate_limit
-            )
-            match_matcher = MatchMatcher()
-            match_tracker_manager = MatchTrackerManager()
-            
-            # Load 0-0 exception competitions from Excel
-            project_root = Path(__file__).parent.parent
-            excel_path = project_root / "competitions" / "Competitions_Results_Odds_Stake.xlsx"
-            if excel_path.exists():
-                zero_zero_exception_competitions = get_competitions_with_zero_zero_exception(str(excel_path))
-                logger.info(f"Loaded {len(zero_zero_exception_competitions)} competition(s) with 0-0 exception")
-            else:
-                zero_zero_exception_competitions = set()
-                logger.warning("Excel file not found, no 0-0 exception competitions loaded")
-            
-            print(f"✓ Live Score API client initialized (plan: {api_plan}, rate limit: {rate_limit}/day)")
-            print(f"✓ Match matcher initialized")
-            print(f"✓ Match tracker manager initialized")
-            if zero_zero_exception_competitions:
-                print(f"✓ Loaded {len(zero_zero_exception_competitions)} competition(s) with 0-0 exception")
-        
-        # Get account funds (test API connection)
-        print("\n[Test] Retrieving account funds...")
-        account_funds = market_service.get_account_funds()
-        initial_bankroll = 0.0
-        if account_funds:
-            available_balance = account_funds.get("availableToBetBalance", "N/A")
-            try:
-                initial_bankroll = float(available_balance) if isinstance(available_balance, (int, float, str)) else 0.0
-            except (ValueError, TypeError):
-                initial_bankroll = 0.0
-            logger.info(f"Account balance: {available_balance}")
-            print(f"✓ Account balance retrieved: {available_balance}")
-        else:
-            print("⚠ Could not retrieve account balance (non-critical)")
-        
-        # Initialize Bet Tracking (Phase 5)
-        bet_tracker = None
-        excel_writer = None
-        skipped_matches_writer = None
-        bet_tracking_config = config.get("bet_tracking", {})
-        if bet_tracking_config.get("track_outcomes", True):
-            excel_path = bet_tracking_config.get("excel_path", "competitions/Competitions_Results_Odds_Stake.xlsx")
-            project_root = Path(__file__).parent.parent
-            excel_path_full = project_root / excel_path
-            
-            bet_tracker = BetTracker(initial_bankroll=initial_bankroll)
-            excel_writer = ExcelWriter(str(excel_path_full))
-            logger.info("Bet tracking initialized")
-            print("✓ Bet tracking initialized")
-        
-        # Initialize Skipped Matches Writer
-        project_root = Path(__file__).parent.parent
-        skipped_matches_path = project_root / "competitions" / "Skipped Matches.xlsx"
-        skipped_matches_writer = SkippedMatchesWriter(str(skipped_matches_path))
-        logger.info("Skipped matches writer initialized")
-        print("✓ Skipped matches writer initialized")
-        
-        # Initialize Betting Service (Milestone 3)
-        betting_service = None
-        bet_execution_config = config.get("bet_execution", {})
-        if bet_execution_config:
-            betfair_config = config.get("betfair", {})
-            # Use factory to create betting service (real or mock)
-            betting_service = service_factory.create_betting_service(
-                app_key=betfair_config.get("app_key", ""),
-                session_token=session_token,
-                api_endpoint=betfair_config.get("api_endpoint", "")
-            )
-            # Note: Token will be updated automatically when session expires and re-login happens
-            # via handle_session_expired callback (line 219-235)
-            if service_factory.is_test_mode:
-                logger.info("Betting service initialized (TEST MODE)")
-                print("✓ Betting service initialized (TEST MODE)")
-            else:
-                logger.info("Betting service initialized")
-                print("✓ Betting service initialized (Milestone 3)")
-        
-        # Initialize Sound Notifier (Milestone 4)
-        sound_notifier = None
-        notifications_config = config.get("notifications", {})
-        if notifications_config.get("sound_enabled", False):
-            try:
-                sound_notifier = SoundNotifier(notifications_config)
-                logger.info("Sound notifier initialized")
-                print("✓ Sound notifications enabled")
-            except Exception as e:
-                logger.warning(f"Failed to initialize sound notifier: {str(e)}")
-                print("⚠ Sound notifications disabled (initialization failed)")
-        
-        # Initialize Telegram Notifier (Milestone 4)
-        telegram_notifier = None
-        if notifications_config.get("telegram_enabled", False):
-            try:
-                telegram_notifier = TelegramNotifier(notifications_config)
-                logger.info("Telegram notifier initialized")
-                print("✓ Telegram notifications enabled")
-            except Exception as e:
-                logger.warning(f"Failed to initialize Telegram notifier: {str(e)}")
-                print("⚠ Telegram notifications disabled (initialization failed)")
-        
-        # Market Detection
-        print("\n" + "=" * 60)
-        print("MARKET DETECTION")
-        print("=" * 60)
-        
+        # Get monitoring config
         monitoring_config = config["monitoring"]
-        event_type_ids = monitoring_config.get("event_type_ids", [1])
-        competition_ids = monitoring_config.get("competition_ids", [])
         in_play_only = monitoring_config.get("in_play_only", True)
         polling_interval = monitoring_config.get("polling_interval_seconds", 10)
+        live_score_config = config.get("live_score_api", {})
         
-        # Try to map competitions from Excel file if competition_ids is empty
-        if not competition_ids:
-            # Get project root (parent of src directory)
-            project_root = Path(__file__).parent.parent
-            excel_path = project_root / "competitions" / "Competitions_Results_Odds_Stake.xlsx"
-            if excel_path.exists():
-                print(f"\n[Competition Mapping] Reading competitions from Excel file...")
-                logger.info("Attempting to map competitions from Excel file")
-                
-                # Get all competitions from Betfair
-                betfair_competitions = market_service.list_competitions(event_type_ids)
-                
-                if betfair_competitions:
-                    # Map Excel competitions to Betfair IDs
-                    mapped_ids = get_competition_ids_from_excel(
-                        str(excel_path),
-                        betfair_competitions
-                    )
-                    
-                    if mapped_ids:
-                        competition_ids = mapped_ids
-                        logger.info(f"Mapped {len(competition_ids)} competitions from Excel to Betfair IDs")
-                        print(f"✓ Mapped {len(competition_ids)} competitions from Excel file")
-                    else:
-                        logger.warning("No competitions matched from Excel file, monitoring all competitions")
-                        print("⚠ No competitions matched from Excel, monitoring all competitions")
-                else:
-                    logger.warning("Could not retrieve competitions from Betfair API")
-                    print("⚠ Could not retrieve competitions from Betfair, monitoring all competitions")
+        # Print setup checklist in a box
+        max_width = max(len(item) for item in checklist_items) if checklist_items else 60
+        box_width = max_width + 4
+        
+        logger.info("")
+        logger.info("┌" + "─" * (box_width - 2) + "┐")
+        logger.info("│" + " " * ((box_width - 16) // 2) + "Setup Checklist" + " " * ((box_width - 16 + 1) // 2) + "│")
+        logger.info("├" + "─" * (box_width - 2) + "┤")
+        for item in checklist_items:
+            if item == "":
+                # Empty line
+                logger.info("│" + " " * (box_width - 2) + "│")
             else:
-                logger.info("Excel file not found, monitoring all competitions")
-                print("ℹ Excel file not found, monitoring all competitions")
+                # Pad item to box width
+                padded_item = item + " " * (box_width - len(item) - 3)
+                logger.info(f"│{padded_item}│")
+        logger.info("└" + "─" * (box_width - 2) + "┘")
+        logger.info("")
         
-        logger.info(f"Monitoring configuration:")
-        logger.info(f"  - Event Type IDs: {event_type_ids}")
-        logger.info(f"  - Competition IDs: {competition_ids if competition_ids else 'All'}")
-        logger.info(f"  - In-play only: {in_play_only}")
-        logger.info(f"  - Polling interval: {polling_interval}s")
-        
-        print(f"\nMonitoring settings:")
-        print(f"  - Event Types: {event_type_ids}")
-        print(f"  - Competitions: {len(competition_ids) if competition_ids else 'All'} competition(s)")
-        if competition_ids:
-            print(f"    IDs: {competition_ids[:10]}{'...' if len(competition_ids) > 10 else ''}")
-        print(f"  - In-play only: {in_play_only}")
-        print(f"  - Polling interval: {polling_interval} seconds")
-        
-        # Main detection loop
-        print(f"\n[Market Detection] Starting detection loop...")
-        print("Press Ctrl+C to stop\n")
+        # Setup completed
+        logger.info("Setup completed, starting bot...")
+        logger.info("Monitoring phase started – tracking live matches...")
         
         iteration = 0
         retry_delay = 5
@@ -644,8 +166,6 @@ def main():
         live_api_polling_interval = live_score_config.get("polling_interval_seconds", 60) if live_score_config else 60
         last_live_api_call_time = None  # None means never called before
         cached_live_matches = []  # Cache live matches between API calls
-        
-        logger.info(f"Live Score API polling interval: {live_api_polling_interval}s")
         
         while True:
             # Check if stop was requested from web interface
@@ -676,9 +196,6 @@ def main():
                     logger.debug(f"After filtering: {len(markets)} match-specific market(s)")
                 
                 if markets:
-                    logger.debug(f"Found {len(markets)} in-play match-specific market(s)")
-                    print(f"\n[{iteration}] Found {len(markets)} in-play match-specific market(s):")
-                    
                     # Get unique events from markets
                     unique_events: Dict[str, Dict[str, Any]] = {}
                     for market in markets:
@@ -693,20 +210,19 @@ def main():
                         if event_id:
                             unique_events[event_id]["markets"].append(market)
                     
-                    logger.debug(f"Found {len(unique_events)} unique event(s)")
+                    # MỤC 6.1: Log Betfair events clearly - show ALL matches EVERY iteration
+                    # Only use logger.info() - it already outputs to console via console_handler
+                    logger.info(f"\n[{iteration}] Betfair: {len(unique_events)} live match(es) available")
                     
-                    # Log details of first few markets
-                    for i, market in enumerate(markets[:5], 1):  # Show first 5
-                        market_id = market.get("marketId", "N/A")
-                        market_name = market.get("marketName", "N/A")
-                        event_name = market.get("event", {}).get("name", "N/A")
-                        competition_name = market.get("competition", {}).get("name", "N/A")
+                    # MỤC 6.1: Show ALL events (not just first 5) - log every iteration
+                    event_list = list(unique_events.values())
+                    for i, event_data in enumerate(event_list, 1):
+                        event = event_data["event"]
+                        event_name = event.get("name", "N/A")
+                        competition_name = event_data["competition"].get("name", "N/A")
+                        market_count = len(event_data["markets"])
                         
-                        logger.debug(f"  Market {i}: {event_name} - {market_name}")
-                        print(f"  [{i}] {event_name} - {market_name}")
-                    
-                    if len(markets) > 5:
-                        print(f"  ... and {len(markets) - 5} more markets")
+                        logger.info(f"  [{i}] {event_name} ({competition_name}) - {market_count} market(s)")
                     
                     # Milestone 2: Match with Live API and start tracking
                     if live_score_client and match_matcher and match_tracker_manager:
@@ -718,16 +234,13 @@ def main():
                         if last_live_api_call_time is None:
                             # First call - always call API
                             should_call_api = True
-                            logger.info(f"Calling Live Score API (first call, interval: {live_api_polling_interval}s)")
                         else:
                             time_since_last_call = current_time - last_live_api_call_time
                             if time_since_last_call >= live_api_polling_interval:
                                 should_call_api = True
-                                logger.info(f"Calling Live Score API (last call was {time_since_last_call:.1f}s ago, interval: {live_api_polling_interval}s)")
                             else:
-                                # Use cached matches
-                                remaining_time = live_api_polling_interval - time_since_last_call
-                                logger.info(f"Using cached Live API data (last call: {time_since_last_call:.1f}s ago, next call in {remaining_time:.1f}s)")
+                                # Use cached matches (don't log to reduce noise)
+                                pass
                         
                         if should_call_api:
                             # Time to call Live API
@@ -737,7 +250,6 @@ def main():
                                 # Only cache if we got valid data (list)
                                 if isinstance(live_matches, list):
                                     cached_live_matches = live_matches
-                                    logger.info(f"Live Score API called successfully (next call in {live_api_polling_interval}s)")
                                 else:
                                     logger.warning(f"Live Score API returned invalid data type, using cached data")
                                     live_matches = cached_live_matches if cached_live_matches else []
@@ -749,26 +261,32 @@ def main():
                         else:
                             # Use cached matches
                             live_matches = cached_live_matches
-                        if live_matches:
-                            logger.info(f"Live API: {len(live_matches)} live match(es) available")
-                            # Log first few matches for visibility
-                            from football_api.parser import parse_match_teams, parse_match_competition, parse_match_minute, parse_match_score
-                            for i, lm in enumerate(live_matches[:3], 1):  # Log first 3
-                                home, away = parse_match_teams(lm)
-                                comp = parse_match_competition(lm)
-                                minute = parse_match_minute(lm)
-                                score = parse_match_score(lm)
-                                status = lm.get("status", "N/A")
-                                logger.info(f"  [{i}] {home} v {away} ({comp}) - {score} @ {minute}' [{status}]")
-                            if len(live_matches) > 3:
-                                logger.info(f"  ... and {len(live_matches) - 3} more live match(es)")
-                        else:
-                            # Log at info level but less verbose
-                            logger.info("Live API: No live matches available")
+                        
+                        # Log Live API results (only when calling API, not when using cache)
+                        if should_call_api:
+                            if live_matches:
+                                # Only use logger.info() - it already outputs to console via console_handler
+                                logger.info(f"Live API: {len(live_matches)} live match(es) available")
+                                # Log ALL matches (not just first 5) - MỤC 6.1
+                                # Filter out FINISHED matches before logging (double check, should already be filtered in get_live_matches)
+                                actual_live = [lm for lm in live_matches if "FINISHED" not in str(lm.get("status", "")).upper()]
+                                for i, lm in enumerate(actual_live, 1):  # Log ALL matches
+                                    home, away = parse_match_teams(lm)
+                                    comp = parse_match_competition(lm)
+                                    minute = parse_match_minute(lm)
+                                    score = parse_match_score(lm)
+                                    status = lm.get("status", "N/A")
+                                    logger.info(f"  [{i}] {home} v {away} ({comp}) - {score} @ {minute}' [{status}]")
+                                
+                                main._last_live_count = len(live_matches)
+                            else:
+                                # Log when no matches available (only when calling API)
+                                logger.info(f"Live API: No live matches available")
                         
                         # Match Betfair events with Live API matches
                         matched_count = 0
                         total_events = len(unique_events)
+                        new_tracked_matches = []  # Collect newly matched matches for batch logging
                         for event_id, event_data in unique_events.items():
                             betfair_event = event_data["event"]
                             competition_name = event_data["competition"].get("name", "")
@@ -834,6 +352,9 @@ def main():
                                         not getattr(tracker, 'bet_skipped', False)):
                                         match_tracking_config = config.get("match_tracking", {})
                                         target_over = match_tracking_config.get("target_over", 2.5)
+                                        
+                                        # Get bet execution config
+                                        bet_execution_config = config.get("bet_execution", {})
                                         
                                         logger.info(f"Attempting to place lay bet for {tracker.betfair_event_name} (minute {tracker.current_minute}, score: {tracker.current_score})")
                                         
@@ -948,10 +469,8 @@ def main():
                                     matched_count += 1
                                     live_match_id = str(live_match.get("id", ""))
                                     # Get match details for logging
-                                    from football_api.parser import parse_match_teams, parse_match_competition, parse_match_minute, parse_match_score
                                     live_home, live_away = parse_match_teams(live_match)
                                     live_comp = parse_match_competition(live_match)
-                                    logger.info(f"Matched: {betfair_event_name} <-> {live_home} v {live_away} ({live_comp})")
                                     
                                     # Get match tracking config
                                     match_tracking_config = config.get("match_tracking", {})
@@ -967,7 +486,31 @@ def main():
                                     # Use Live API competition name if available, otherwise fallback to Betfair
                                     tracker_competition_name = live_competition_name if live_competition_name else competition_name
                                     
-                                    # Create tracker
+                                    # Parse initial match data to check if we should start tracking
+                                    score = parse_match_score(live_match)
+                                    minute = parse_match_minute(live_match)
+                                    
+                                    # Check if match is too late to start tracking (must be <= 74 minutes)
+                                    if minute > 74:
+                                        # Get target scores from Excel for logging
+                                        project_root = Path(__file__).parent.parent
+                                        excel_path = project_root / "competitions" / "Competitions_Results_Odds_Stake.xlsx"
+                                        target_scores = []
+                                        if excel_path.exists():
+                                            from logic.qualification import get_competition_targets
+                                            targets = get_competition_targets(tracker_competition_name, str(excel_path))
+                                            if targets:
+                                                target_scores = sorted(list(targets))
+                                        
+                                        targets_str = ", ".join(target_scores) if target_scores else "N/A"
+                                        match_status = live_match.get("status", "N/A")
+                                        reason = f"minute {minute} > 74"
+                                        skip_message = f"⏭️  Skipping: {reason} - {tracker_competition_name} - {betfair_event_name} ({score}) [{targets_str}] {match_status}"
+                                        logger.info(f"Skipping tracking for {betfair_event_name}: {reason} - Competition: {tracker_competition_name}, Score: {score}, Targets: [{targets_str}], Status: {match_status}")
+                                        print(f"  {skip_message}")
+                                        continue
+                                    
+                                    # Create tracker (only if minute <= 74)
                                     tracker = MatchTracker(
                                         betfair_event_id=event_id,
                                         betfair_event_name=betfair_event.get("name", "N/A"),
@@ -980,10 +523,6 @@ def main():
                                         target_over=target_over,
                                         early_discard_enabled=early_discard_enabled
                                     )
-                                    
-                                    # Update with initial data
-                                    score = parse_match_score(live_match)
-                                    minute = parse_match_minute(live_match)
                                     
                                     # Get goals from events endpoint if match is in monitoring window
                                     goals = []
@@ -1010,27 +549,65 @@ def main():
                                     # Add to manager
                                     match_tracker_manager.add_tracker(tracker)
                                     
-                                    logger.info(f"Tracking: {tracker.betfair_event_name} (min {minute}, score {score})")
-                                    print(f"  📊 Tracking: {tracker.betfair_event_name} (min {minute}, score {score})")
+                                    # Collect match info for batch logging
+                                    new_tracked_matches.append({
+                                        "name": tracker.betfair_event_name,
+                                        "minute": minute,
+                                        "score": score,
+                                        "competition": tracker_competition_name,
+                                        "excel_path": str(excel_path) if excel_path.exists() else None
+                                    })
                                 else:
                                     # Only log mismatch if there are live matches available (to reduce noise)
                                     if live_matches:
                                         logger.debug(f"No match found for: {betfair_event_name}")
                         
-                        # Log matching summary
-                        if total_events > 0:
+                        # Log tracking list for newly matched matches
+                        if new_tracked_matches:
+                            logger.info("📊 Tracking List")
+                            logger.info("")
+                            
+                            # Get Excel path
+                            project_root = Path(__file__).parent.parent
+                            excel_path = project_root / "competitions" / "Competitions_Results_Odds_Stake.xlsx"
+                            
+                            for idx, match_info in enumerate(new_tracked_matches, 1):
+                                # Get target scores from Excel for this competition
+                                target_scores = []
+                                if match_info["excel_path"]:
+                                    from logic.qualification import get_competition_targets
+                                    targets = get_competition_targets(match_info["competition"], match_info["excel_path"])
+                                    if targets:
+                                        target_scores = sorted(list(targets))
+                                
+                                # Format target scores
+                                targets_str = ", ".join(target_scores) if target_scores else "N/A"
+                                
+                                log_line = f"{idx}. {match_info['name']} (min {match_info['minute']}, score {match_info['score']}) [{targets_str}]"
+                                logger.info(log_line)
+                            
+                            logger.info("")
+                        
+                        # Log matching summary (only when count changes or first iteration)
+                        if not hasattr(main, '_last_matched_summary'):
+                            main._last_matched_summary = None
+                        
+                        current_summary = f"{matched_count}/{total_events}"
+                        if total_events > 0 and (iteration == 1 or main._last_matched_summary != current_summary):
                             if matched_count > 0:
                                 # Show boxed message when matches are found
-                                message = f"Matching: {matched_count}/{total_events} event(s) matched and started tracking"
+                                message = f"Matched: {matched_count}/{total_events} event(s) matched and started tracking"
                                 boxed_message = format_boxed_message(message)
                                 logger.info(message)
-                                print(boxed_message)
+                                print(boxed_message)  # Keep print for boxed message (special formatting)
                             elif live_matches:
                                 # No box for 0 matches, just regular log
-                                logger.info(f"Matching: 0/{total_events} event(s) matched (checking {len(live_matches)} live match(es))")
+                                logger.info(f"Matched: 0/{total_events} Betfair event(s) matched (checking {len(live_matches)} Live API match(es))")
                             else:
                                 # No box for no live matches, just regular log
-                                logger.info(f"Matching: {total_events} Betfair event(s) found, but no live matches available")
+                                logger.info(f"Matched: {total_events} Betfair event(s) found, but no Live API matches available")
+                            
+                            main._last_matched_summary = current_summary
                         
                         # Process finished matches (Phase 5: Bet Tracking)
                         if bet_tracker and excel_writer:
@@ -1047,13 +624,41 @@ def main():
                         # Cleanup finished matches
                         match_tracker_manager.cleanup_finished()
                         
-                        # Log tracking summary (only if there are trackers)
+                        # Cleanup discarded matches (MỤC 3.7)
+                        match_tracker_manager.cleanup_discarded()
+                        
+                        # MỤC 6: Display tracking table with all matches from 60-74 (MỤC 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8)
+                        # MỤC 6.3: Update and display minute + score from 60-74 every iteration
                         all_trackers = match_tracker_manager.get_all_trackers()
                         if all_trackers:
-                            ready_for_bet = match_tracker_manager.get_ready_for_bet()
-                            logger.info(f"Tracking: {len(all_trackers)} match(es), {len(ready_for_bet)} ready for bet")
-                            if ready_for_bet:
-                                print(f"  🎯 {len(ready_for_bet)} match(es) ready for bet placement")
+                            # Filter trackers from minute 60-74 for display (exclude discarded matches)
+                            from logic.match_tracker import MatchState
+                            trackers_60_74 = [t for t in all_trackers 
+                                            if 60 <= t.current_minute <= 74 
+                                            and t.state != MatchState.DISQUALIFIED]
+                            
+                            if trackers_60_74:
+                                # Get Excel path for target scores
+                                project_root = Path(__file__).parent.parent
+                                excel_path = project_root / "competitions" / "Competitions_Results_Odds_Stake.xlsx"
+                                
+                                # MỤC 6.3: Format and display tracking table EVERY iteration (not just when count changes)
+                                table = format_tracking_table(
+                                    trackers_60_74,
+                                    excel_path=str(excel_path) if excel_path.exists() else None
+                                )
+                                logger.info(f"\n[{iteration}] Tracking {len(trackers_60_74)} match(es) from minute 60-74:\n{table}")
+                                
+                                # Also show summary
+                                ready_for_bet = match_tracker_manager.get_ready_for_bet()
+                                if ready_for_bet:
+                                    logger.info(f"  🎯 {len(ready_for_bet)} match(es) ready for bet placement")
+                            else:
+                                # No matches at 60-74 yet, just show count
+                                ready_for_bet = match_tracker_manager.get_ready_for_bet()
+                                logger.info(f"Tracking: {len(all_trackers)} match(es) (waiting for minute 60-74), {len(ready_for_bet)} ready for bet")
+                                if ready_for_bet:
+                                    logger.info(f"  🎯 {len(ready_for_bet)} match(es) ready for bet placement")
                 else:
                     logger.info("No in-play match-specific markets found")
                     print(f"[{iteration}] No in-play match-specific markets found")
@@ -1208,8 +813,8 @@ def main():
         # Cleanup
         print("\n[Cleanup] Stopping keep-alive manager...")
         keep_alive_manager.stop()
-        logger.info("Milestone 2 completed successfully")
-        print("✓ Done")
+        logger.info("Bot stopped gracefully")
+        print("✓ Bot stopped")
         
         return 0
         

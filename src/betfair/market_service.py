@@ -165,7 +165,7 @@ class MarketService:
             result = response.json()
             competitions = result if isinstance(result, list) else []
             
-            logger.info(f"Retrieved {len(competitions)} competitions for event types {event_type_ids}")
+            # Logging moved to main.py setup checklist
             return competitions
             
         except KeyboardInterrupt:
@@ -363,7 +363,7 @@ class MarketService:
             response.raise_for_status()
             
             result = response.json()
-            logger.info("Account funds retrieved successfully")
+            # Logging moved to main.py setup checklist
             return result
             
         except requests.exceptions.HTTPError as e:

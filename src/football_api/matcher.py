@@ -81,7 +81,7 @@ class MatchMatcher:
     def __init__(self):
         """Initialize match matcher with empty cache"""
         self.match_cache: Dict[str, str] = {}  # Betfair Event ID -> Live API Match ID
-        logger.info("Match matcher initialized")
+        # Logging moved to main.py setup checklist
     
     def normalize_team_name(self, team_name: str) -> str:
         """

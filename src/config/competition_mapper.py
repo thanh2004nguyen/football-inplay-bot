@@ -524,7 +524,7 @@ def map_competitions_direct_from_excel(excel_path: str,
             elif excel_betfair_name in betfair_id_name_to_id:
                 comp_id = betfair_id_name_to_id[excel_betfair_name]
                 matched_ids.append(comp_id)
-                logger.info(f"Direct match (ID_Name format): '{excel_betfair_name}' -> ID: {comp_id}")
+                # Logging moved to main.py setup checklist
             else:
                 # Try case-insensitive match
                 found = False
@@ -557,7 +557,7 @@ def map_competitions_direct_from_excel(excel_path: str,
         if unmatched_names:
             logger.warning(f"Direct mapping: {len(unmatched_names)} Betfair competition name(s) not found: {', '.join(unmatched_names[:10])}{'...' if len(unmatched_names) > 10 else ''}")
         
-        logger.info(f"Direct mapping: Matched {len(matched_ids)} competition(s) from {len(betfair_names_from_excel)} Excel entries")
+        # Logging moved to main.py setup checklist
         return list(set(matched_ids))  # Remove duplicates
         
     except Exception as e:
@@ -583,7 +583,7 @@ def get_competition_ids_from_excel(excel_path: str,
         
         # Strategy 1: Direct mapping (new format with Competition-Betfair column)
         if 'Competition-Betfair' in df.columns:
-            logger.info("Using direct mapping from 'Competition-Betfair' column")
+            # Logging moved to main.py setup checklist
             competition_ids = map_competitions_direct_from_excel(excel_path, betfair_competitions)
             if competition_ids:
                 return competition_ids
@@ -641,7 +641,7 @@ def get_competitions_with_zero_zero_exception(excel_path: str) -> Set[str]:
             logger.warning("Neither 'Competition-Live' nor 'Competition' column found")
             return set()
         
-        logger.info(f"Found {len(competitions)} competition(s) with 0-0 exception from Excel file")
+        # Logging moved to main.py setup checklist
         if competitions:
             logger.debug(f"0-0 exception competitions: {', '.join(competitions[:10])}{'...' if len(competitions) > 10 else ''}")
         

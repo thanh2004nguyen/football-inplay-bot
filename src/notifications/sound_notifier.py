@@ -43,11 +43,6 @@ class SoundNotifier:
         if not playsound:
             self.enabled = False
             logger.warning("playsound3 not available, sound notifications disabled")
-        
-        if self.enabled:
-            logger.info(f"Sound notifications enabled")
-            logger.info(f"  - Bet placed sound: {self.bet_placed_sound}")
-            logger.info(f"  - Bet matched sound: {self.bet_matched_sound}")
     
     def _get_sound_path(self, project_root: Path, sound_file: str) -> Optional[str]:
         """

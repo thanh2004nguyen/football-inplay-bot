@@ -41,11 +41,6 @@ class EmailNotifier:
             logger.warning("Email configuration incomplete, email notifications disabled")
             self.enabled = False
             return
-        
-        logger.info(f"Email notifier initialized")
-        logger.info(f"  - SMTP Server: {self.smtp_server}:{self.smtp_port}")
-        logger.info(f"  - Sender: {self.sender_email}")
-        logger.info(f"  - Recipient: {self.recipient_email}")
     
     def _send_email(self, subject: str, body: str, is_html: bool = False) -> bool:
         """

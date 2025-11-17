@@ -97,7 +97,7 @@ class BetTracker:
         self.current_bankroll = initial_bankroll
         self.initial_bankroll = initial_bankroll
         
-        logger.info(f"Bet tracker initialized with bankroll: {initial_bankroll:.2f}")
+        # Logging moved to main.py setup checklist
     
     def record_bet(self, bet_id: str, match_id: str, competition: str,
                    market_name: str, selection: str, odds: float, stake: float) -> BetRecord:
