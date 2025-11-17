@@ -6,7 +6,7 @@ import sys
 import time
 import requests
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -23,10 +23,339 @@ from logic.bet_executor import execute_lay_bet
 from notifications.email_notifier import EmailNotifier
 from utils import (format_tracking_table, format_boxed_message, 
                    process_finished_matches, perform_login_with_retry, initialize_all_services)
+from config.competition_mapper import get_competition_ids_from_excel
 import logging
 from datetime import datetime
 
 logger = logging.getLogger("BetfairBot")
+
+
+def perform_matching(unique_events: Dict[str, Dict[str, Any]], 
+                    live_matches: List[Dict[str, Any]],
+                    live_score_client, match_matcher, match_tracker_manager,
+                    config, zero_zero_exception_competitions,
+                    market_service, betting_service, bet_tracker, excel_writer,
+                    skipped_matches_writer, sound_notifier, telegram_notifier,
+                    iteration: int, is_refresh: bool = False,
+                    matching_refresh_interval: int = 3600) -> tuple:
+    """
+    Perform matching between Betfair events and LiveScore matches
+    
+        Args:
+        unique_events: Dictionary of Betfair events
+        live_matches: List of live matches from LiveScore API
+        live_score_client: LiveScore API client
+        match_matcher: Match matcher instance
+        match_tracker_manager: Match tracker manager
+        config: Bot configuration
+        zero_zero_exception_competitions: Set of competitions with 0-0 exception
+        market_service: Market service
+        betting_service: Betting service
+        bet_tracker: Bet tracker
+        excel_writer: Excel writer
+        skipped_matches_writer: Skipped matches writer
+        sound_notifier: Sound notifier
+        telegram_notifier: Telegram notifier
+        iteration: Current iteration number
+        is_refresh: Whether this is a refresh matching
+        matching_refresh_interval: Matching refresh interval in seconds
+    
+    Returns:
+        Tuple of (matched_count, total_events, new_tracked_matches)
+    """
+    from logic.bet_executor import execute_lay_bet
+    from logic.match_tracker import MatchState
+    
+    matched_count = 0
+    total_events = len(unique_events)
+    new_tracked_matches = []  # Collect newly matched matches for batch logging
+    
+    # Log refresh message if this is a refresh
+    if is_refresh:
+        # Get refresh interval from config for logging
+        refresh_interval_minutes = (matching_refresh_interval // 60) if matching_refresh_interval >= 60 else (matching_refresh_interval / 60)
+        if matching_refresh_interval >= 60:
+            interval_str = f"{refresh_interval_minutes} minute{'s' if refresh_interval_minutes > 1 else ''}"
+        else:
+            interval_str = f"{matching_refresh_interval} second{'s' if matching_refresh_interval > 1 else ''}"
+        logger.info(f"\n[{iteration}] 🔄 Refreshing Betfair ↔ LiveScore matching (every {interval_str})...")
+    
+    for event_id, event_data in unique_events.items():
+        betfair_event = event_data["event"]
+        competition_name = event_data["competition"].get("name", "")
+        betfair_event_name = betfair_event.get("name", "N/A")
+        
+        logger.debug(f"Matching: {betfair_event_name}")
+        
+        # Check if already tracking
+        tracker = match_tracker_manager.get_tracker(event_id)
+        if tracker:
+            # Update existing tracker
+            live_match = None
+            for lm in live_matches:
+                if str(lm.get("id", "")) == tracker.live_match_id:
+                    live_match = lm
+                    break
+            
+            if live_match:
+                # Update match data from live match
+                score = parse_match_score(live_match)
+                minute = parse_match_minute(live_match)
+                
+                # Get goals from events endpoint if needed (to optimize rate limit)
+                # Only fetch events when match is in monitoring window or qualified
+                goals = []
+                if tracker.state in [MatchState.MONITORING_60_74, MatchState.QUALIFIED, MatchState.READY_FOR_BET]:
+                    # Fetch events to get goals timeline
+                    if live_score_client:
+                        events_data = live_score_client.get_match_details(tracker.live_match_id)
+                        if events_data:
+                            goals = parse_goals_timeline(events_data)
+                        else:
+                            # Fallback: try to parse from live_match (may not have goals)
+                            goals = parse_goals_timeline(live_match)
+                else:
+                    # For other states, try to parse from live_match (may be empty)
+                    goals = parse_goals_timeline(live_match)
+                
+                old_state = tracker.state
+                tracker.update_match_data(score, minute, goals)
+                
+                # Get Excel path for early discard check
+                project_root = Path(__file__).parent.parent
+                excel_path = project_root / "competitions" / "Competitions_Results_Odds_Stake.xlsx"
+                
+                tracker.update_state(excel_path=str(excel_path) if excel_path.exists() else None)
+                
+                # Log status changes
+                if tracker.state == MatchState.QUALIFIED and old_state != MatchState.QUALIFIED:
+                    logger.info(f"Match QUALIFIED: {tracker.betfair_event_name} - {tracker.qualification_reason}")
+                    print(f"  ✓ QUALIFIED: {tracker.betfair_event_name} - {tracker.qualification_reason}")
+                elif tracker.state == MatchState.READY_FOR_BET and old_state != MatchState.READY_FOR_BET:
+                    logger.info(f"Match READY FOR BET: {tracker.betfair_event_name}")
+                    print(f"  🎯 READY FOR BET: {tracker.betfair_event_name}")
+                
+                # Milestone 3: Execute lay bet if conditions are met
+                # Check both when state changes to READY_FOR_BET and on subsequent updates
+                # Only attempt if bet not placed and not already skipped
+                if (tracker.state == MatchState.READY_FOR_BET and 
+                    betting_service and 
+                    tracker.current_minute >= 75 and 
+                    not tracker.bet_placed and
+                    not getattr(tracker, 'bet_skipped', False)):
+                    match_tracking_config = config.get("match_tracking", {})
+                    target_over = match_tracking_config.get("target_over", 2.5)
+                    
+                    # Get bet execution config
+                    bet_execution_config = config.get("bet_execution", {})
+                    
+                    logger.info(f"Attempting to place lay bet for {tracker.betfair_event_name} (minute {tracker.current_minute}, score: {tracker.current_score})")
+                    
+                    # Get Excel path
+                    project_root = Path(__file__).parent.parent
+                    excel_path = project_root / "competitions" / "Competitions_Results_Odds_Stake.xlsx"
+                    
+                    bet_result = execute_lay_bet(
+                        market_service=market_service,
+                        betting_service=betting_service,
+                        event_id=tracker.betfair_event_id,
+                        event_name=tracker.betfair_event_name,
+                        target_over=target_over,
+                        bet_config=bet_execution_config,
+                        competition_name=tracker.competition_name,
+                        current_score=tracker.current_score,
+                        excel_path=str(excel_path)
+                    )
+                    
+                    if bet_result and bet_result.get("success"):
+                        # Mark bet as placed
+                        tracker.bet_placed = True
+                        tracker.bet_id = bet_result.get("betId", "")
+                        
+                        # Record bet in BetTracker
+                        if bet_tracker:
+                            bet_record = bet_tracker.record_bet(
+                                bet_id=bet_result.get("betId", ""),
+                                match_id=tracker.betfair_event_id,
+                                competition=tracker.competition_name,
+                                market_name=bet_result.get("marketName", ""),
+                                selection=bet_result.get("runnerName", ""),
+                                odds=bet_result.get("layPrice", 0.0),
+                                stake=bet_result.get("stake", 0.0)
+                            )
+                            
+                            # Write to Excel if enabled
+                            if excel_writer:
+                                excel_writer.write_bet_record(bet_record)
+                        
+                        # Console output
+                        print(f"  ✅ BET PLACED: {tracker.betfair_event_name}")
+                        print(f"     Market: {bet_result.get('marketName', 'N/A')}")
+                        print(f"     Lay @ {bet_result.get('layPrice', 0.0)}, Stake: {bet_result.get('stake', 0.0)} EUR, Liability: {bet_result.get('liability', 0.0)} EUR")
+                        print(f"     BetId: {bet_result.get('betId', 'N/A')}")
+                        
+                        logger.info(f"Bet placed successfully: BetId={bet_result.get('betId')}, Stake={bet_result.get('stake')}, Liability={bet_result.get('liability')}")
+                        
+                        # Play sound notification for bet placed
+                        if sound_notifier:
+                            sound_notifier.play_bet_placed_sound()
+                        
+                        # Check if bet is matched and play matched sound
+                        size_matched = bet_result.get("sizeMatched", 0.0)
+                        if size_matched and size_matched > 0:
+                            if sound_notifier:
+                                sound_notifier.play_bet_matched_sound()
+                            
+                            # Send Telegram notification for bet matched
+                            if telegram_notifier:
+                                try:
+                                    telegram_notifier.send_bet_matched_notification(bet_result)
+                                except Exception as e:
+                                    logger.error(f"Failed to send Telegram bet matched notification: {str(e)}")
+                            
+                            logger.info(f"Bet matched immediately: BetId={bet_result.get('betId')}, SizeMatched={size_matched}")
+                    else:
+                        # Mark as skipped to prevent retry
+                        tracker.bet_skipped = True
+                        
+                        # Record skipped match (only once)
+                        logger.warning(f"Failed to place bet for {tracker.betfair_event_name}")
+                        print(f"  ⚠ Could not place bet for {tracker.betfair_event_name}")
+                        
+                        if skipped_matches_writer:
+                            # Prepare skipped match data
+                            skipped_data = {
+                                "match_name": tracker.betfair_event_name,
+                                "competition": tracker.competition_name,
+                                "minute": tracker.current_minute if tracker.current_minute >= 0 else "N/A",
+                                "status": tracker.state.value if hasattr(tracker.state, 'value') else str(tracker.state),
+                                "timestamp": datetime.now()
+                            }
+                            
+                            # If bet_result is a dict with skip information, use it
+                            if bet_result and isinstance(bet_result, dict):
+                                skipped_data["reason"] = bet_result.get("reason", bet_result.get("skip_reason", "Unknown reason"))
+                                skipped_data["best_back"] = bet_result.get("bestBackPrice")
+                                skipped_data["best_lay"] = bet_result.get("bestLayPrice")
+                                skipped_data["spread_ticks"] = bet_result.get("spread_ticks")
+                                skipped_data["current_odds"] = bet_result.get("bestLayPrice") or bet_result.get("calculatedLayPrice")
+                            else:
+                                # bet_result is None or invalid
+                                skipped_data["reason"] = "Bet execution failed (no details available)"
+                                skipped_data["best_back"] = None
+                                skipped_data["best_lay"] = None
+                                skipped_data["spread_ticks"] = None
+                                skipped_data["current_odds"] = None
+                            
+                            try:
+                                skipped_matches_writer.write_skipped_match(skipped_data)
+                                logger.info(f"Skipped match recorded: {tracker.betfair_event_name} - {skipped_data['reason']}")
+                            except Exception as e:
+                                logger.error(f"Error writing skipped match: {str(e)}")
+        else:
+            # Try to match with Live API
+            live_match = match_matcher.match_betfair_to_live_api(
+                betfair_event, live_matches, competition_name
+            )
+            
+            if live_match:
+                matched_count += 1
+                live_match_id = str(live_match.get("id", ""))
+                # Get match details for logging
+                live_home, live_away = parse_match_teams(live_match)
+                live_comp = parse_match_competition(live_match)
+                
+                # Get match tracking config
+                match_tracking_config = config.get("match_tracking", {})
+                goal_window = match_tracking_config.get("goal_detection_window", {})
+                start_minute = goal_window.get("start_minute", 60)
+                end_minute = goal_window.get("end_minute", 74)
+                var_check_enabled = match_tracking_config.get("var_check_enabled", True)
+                target_over = match_tracking_config.get("target_over", None)
+                early_discard_enabled = match_tracking_config.get("early_discard_enabled", True)
+                
+                # Get competition name from Live API (for Excel matching)
+                live_competition_name = parse_match_competition(live_match)
+                # Use Live API competition name if available, otherwise fallback to Betfair
+                tracker_competition_name = live_competition_name if live_competition_name else competition_name
+                
+                # Parse initial match data to check if we should start tracking
+                score = parse_match_score(live_match)
+                minute = parse_match_minute(live_match)
+                
+                # Check if match is too late to start tracking (must be <= 74 minutes)
+                if minute > 74:
+                    # Get target scores from Excel for logging
+                    project_root = Path(__file__).parent.parent
+                    excel_path = project_root / "competitions" / "Competitions_Results_Odds_Stake.xlsx"
+                    target_scores = []
+                    if excel_path.exists():
+                        from logic.qualification import get_competition_targets
+                        targets = get_competition_targets(tracker_competition_name, str(excel_path))
+                        if targets:
+                            target_scores = sorted(list(targets))
+                    
+                    targets_str = ", ".join(target_scores) if target_scores else "N/A"
+                    match_status = live_match.get("status", "N/A")
+                    reason = f"minute {minute} > 74"
+                    skip_message = f"⏭️  Skipping: {reason} - {tracker_competition_name} - {betfair_event_name} ({score}) [{targets_str}] {match_status}"
+                    logger.info(f"Skipping tracking for {betfair_event_name}: {reason} - Competition: {tracker_competition_name}, Score: {score}, Targets: [{targets_str}], Status: {match_status}")
+                    print(f"  {skip_message}")
+                    continue
+                
+                # Create tracker (only if minute <= 74)
+                tracker = MatchTracker(
+                    betfair_event_id=event_id,
+                    betfair_event_name=betfair_event.get("name", "N/A"),
+                    live_match_id=live_match_id,
+                    competition_name=tracker_competition_name,
+                    start_minute=start_minute,
+                    end_minute=end_minute,
+                    zero_zero_exception_competitions=zero_zero_exception_competitions,
+                    var_check_enabled=var_check_enabled,
+                    target_over=target_over,
+                    early_discard_enabled=early_discard_enabled
+                )
+                
+                # Get goals from events endpoint if match is in monitoring window
+                goals = []
+                if minute >= start_minute or minute >= 60:
+                    # Fetch events to get goals timeline
+                    if live_score_client:
+                        events_data = live_score_client.get_match_details(live_match_id)
+                        if events_data:
+                            goals = parse_goals_timeline(events_data)
+                        else:
+                            # Fallback: try to parse from live_match
+                            goals = parse_goals_timeline(live_match)
+                else:
+                    # For early minutes, try to parse from live_match (may be empty)
+                    goals = parse_goals_timeline(live_match)
+                
+                tracker.update_match_data(score, minute, goals)
+                # Get Excel path for early discard check
+                project_root = Path(__file__).parent.parent
+                excel_path = project_root / "competitions" / "Competitions_Results_Odds_Stake.xlsx"
+                
+                tracker.update_state(excel_path=str(excel_path) if excel_path.exists() else None)
+                
+                # Add to manager
+                match_tracker_manager.add_tracker(tracker)
+                
+                # Collect match info for batch logging
+                new_tracked_matches.append({
+                    "name": tracker.betfair_event_name,
+                    "minute": minute,
+                    "score": score,
+                    "competition": tracker_competition_name,
+                    "excel_path": str(excel_path) if excel_path.exists() else None
+                })
+            else:
+                # Only log mismatch if there are live matches available (to reduce noise)
+                if live_matches:
+                    logger.debug(f"No match found for: {betfair_event_name}")
+    
+    return matched_count, total_events, new_tracked_matches
 
 
 def main():
@@ -167,6 +496,11 @@ def main():
         last_live_api_call_time = None  # None means never called before
         cached_live_matches = []  # Cache live matches between API calls
         
+        # Matching refresh timer (read from config)
+        monitoring_config = config.get("monitoring", {})
+        matching_refresh_interval = monitoring_config.get("matching_refresh_interval_seconds", 60 * 60)  # Default: 60 minutes
+        last_matching_refresh_time = None  # None means never refreshed before
+        
         while True:
             # Check if stop was requested from web interface
             try:
@@ -283,287 +617,122 @@ def main():
                                 # Log when no matches available (only when calling API)
                                 logger.info(f"Live API: No live matches available")
                         
-                        # Match Betfair events with Live API matches
-                        matched_count = 0
-                        total_events = len(unique_events)
-                        new_tracked_matches = []  # Collect newly matched matches for batch logging
-                        for event_id, event_data in unique_events.items():
-                            betfair_event = event_data["event"]
-                            competition_name = event_data["competition"].get("name", "")
-                            betfair_event_name = betfair_event.get("name", "N/A")
-                            
-                            logger.debug(f"Matching: {betfair_event_name}")
-                            
-                            # Check if already tracking
-                            tracker = match_tracker_manager.get_tracker(event_id)
-                            if tracker:
-                                # Update existing tracker
-                                live_match = None
-                                for lm in live_matches:
-                                    if str(lm.get("id", "")) == tracker.live_match_id:
-                                        live_match = lm
-                                        break
-                                
-                                if live_match:
-                                    # Update match data from live match
-                                    score = parse_match_score(live_match)
-                                    minute = parse_match_minute(live_match)
-                                    
-                                    # Get goals from events endpoint if needed (to optimize rate limit)
-                                    # Only fetch events when match is in monitoring window or qualified
-                                    goals = []
-                                    if tracker.state in [MatchState.MONITORING_60_74, MatchState.QUALIFIED, MatchState.READY_FOR_BET]:
-                                        # Fetch events to get goals timeline
-                                        if live_score_client:
-                                            events_data = live_score_client.get_match_details(tracker.live_match_id)
-                                            if events_data:
-                                                goals = parse_goals_timeline(events_data)
+                        # Check if we need to refresh matching (every 60 minutes)
+                        current_time = time.time()
+                        should_refresh_matching = False
+                        if last_matching_refresh_time is None:
+                            # First time - don't refresh, just do normal matching
+                            should_refresh_matching = False
+                        else:
+                            time_since_last_refresh = current_time - last_matching_refresh_time
+                            if time_since_last_refresh >= matching_refresh_interval:
+                                should_refresh_matching = True
+                        
+                        # If refresh needed, get fresh data from Betfair and LiveScore
+                        if should_refresh_matching:
+                            # Refresh competition mapping from Excel first
+                            project_root = Path(__file__).parent.parent
+                            excel_path = project_root / "competitions" / "Competitions_Results_Odds_Stake.xlsx"
+                            if excel_path.exists():
+                                try:
+                                    betfair_competitions = market_service.list_competitions(event_type_ids)
+                                    if betfair_competitions:
+                                        new_competition_ids = get_competition_ids_from_excel(str(excel_path), betfair_competitions)
+                                        if new_competition_ids:
+                                            old_count = len(competition_ids) if competition_ids else 0
+                                            competition_ids = new_competition_ids
+                                            new_count = len(competition_ids)
+                                            if new_count != old_count:
+                                                logger.info(f"🔄 Competition mapping refreshed: {old_count} → {new_count} competition(s)")
                                             else:
-                                                # Fallback: try to parse from live_match (may not have goals)
-                                                goals = parse_goals_timeline(live_match)
-                                    else:
-                                        # For other states, try to parse from live_match (may be empty)
-                                        goals = parse_goals_timeline(live_match)
-                                    
-                                    old_state = tracker.state
-                                    tracker.update_match_data(score, minute, goals)
-                                    
-                                    # Get Excel path for early discard check
-                                    project_root = Path(__file__).parent.parent
-                                    excel_path = project_root / "competitions" / "Competitions_Results_Odds_Stake.xlsx"
-                                    
-                                    tracker.update_state(excel_path=str(excel_path) if excel_path.exists() else None)
-                                    
-                                    # Log status changes
-                                    if tracker.state == MatchState.QUALIFIED and old_state != MatchState.QUALIFIED:
-                                        logger.info(f"Match QUALIFIED: {tracker.betfair_event_name} - {tracker.qualification_reason}")
-                                        print(f"  ✓ QUALIFIED: {tracker.betfair_event_name} - {tracker.qualification_reason}")
-                                    elif tracker.state == MatchState.READY_FOR_BET and old_state != MatchState.READY_FOR_BET:
-                                        logger.info(f"Match READY FOR BET: {tracker.betfair_event_name}")
-                                        print(f"  🎯 READY FOR BET: {tracker.betfair_event_name}")
-                                    
-                                    # Milestone 3: Execute lay bet if conditions are met
-                                    # Check both when state changes to READY_FOR_BET and on subsequent updates
-                                    # Only attempt if bet not placed and not already skipped
-                                    if (tracker.state == MatchState.READY_FOR_BET and 
-                                        betting_service and 
-                                        tracker.current_minute >= 75 and 
-                                        not tracker.bet_placed and
-                                        not getattr(tracker, 'bet_skipped', False)):
-                                        match_tracking_config = config.get("match_tracking", {})
-                                        target_over = match_tracking_config.get("target_over", 2.5)
-                                        
-                                        # Get bet execution config
-                                        bet_execution_config = config.get("bet_execution", {})
-                                        
-                                        logger.info(f"Attempting to place lay bet for {tracker.betfair_event_name} (minute {tracker.current_minute}, score: {tracker.current_score})")
-                                        
-                                        # Get Excel path
-                                        project_root = Path(__file__).parent.parent
-                                        excel_path = project_root / "competitions" / "Competitions_Results_Odds_Stake.xlsx"
-                                        
-                                        bet_result = execute_lay_bet(
-                                            market_service=market_service,
-                                            betting_service=betting_service,
-                                            event_id=tracker.betfair_event_id,
-                                            event_name=tracker.betfair_event_name,
-                                            target_over=target_over,
-                                            bet_config=bet_execution_config,
-                                            competition_name=tracker.competition_name,
-                                            current_score=tracker.current_score,
-                                            excel_path=str(excel_path)
-                                        )
-                                        
-                                        if bet_result and bet_result.get("success"):
-                                            # Mark bet as placed
-                                            tracker.bet_placed = True
-                                            tracker.bet_id = bet_result.get("betId", "")
-                                            
-                                            # Record bet in BetTracker
-                                            if bet_tracker:
-                                                bet_record = bet_tracker.record_bet(
-                                                    bet_id=bet_result.get("betId", ""),
-                                                    match_id=tracker.betfair_event_id,
-                                                    competition=tracker.competition_name,
-                                                    market_name=bet_result.get("marketName", ""),
-                                                    selection=bet_result.get("runnerName", ""),
-                                                    odds=bet_result.get("layPrice", 0.0),
-                                                    stake=bet_result.get("stake", 0.0)
-                                                )
-                                                
-                                                # Write to Excel if enabled
-                                                if excel_writer:
-                                                    excel_writer.write_bet_record(bet_record)
-                                            
-                                            # Console output
-                                            print(f"  ✅ BET PLACED: {tracker.betfair_event_name}")
-                                            print(f"     Market: {bet_result.get('marketName', 'N/A')}")
-                                            print(f"     Lay @ {bet_result.get('layPrice', 0.0)}, Stake: {bet_result.get('stake', 0.0)} EUR, Liability: {bet_result.get('liability', 0.0)} EUR")
-                                            print(f"     BetId: {bet_result.get('betId', 'N/A')}")
-                                            
-                                            logger.info(f"Bet placed successfully: BetId={bet_result.get('betId')}, Stake={bet_result.get('stake')}, Liability={bet_result.get('liability')}")
-                                            
-                                            # Play sound notification for bet placed
-                                            if sound_notifier:
-                                                sound_notifier.play_bet_placed_sound()
-                                            
-                                            # Check if bet is matched and play matched sound
-                                            size_matched = bet_result.get("sizeMatched", 0.0)
-                                            if size_matched and size_matched > 0:
-                                                if sound_notifier:
-                                                    sound_notifier.play_bet_matched_sound()
-                                                
-                                                # Send Telegram notification for bet matched
-                                                if telegram_notifier:
-                                                    try:
-                                                        telegram_notifier.send_bet_matched_notification(bet_result)
-                                                    except Exception as e:
-                                                        logger.error(f"Failed to send Telegram bet matched notification: {str(e)}")
-                                                
-                                                logger.info(f"Bet matched immediately: BetId={bet_result.get('betId')}, SizeMatched={size_matched}")
-                                        else:
-                                            # Mark as skipped to prevent retry
-                                            tracker.bet_skipped = True
-                                            
-                                            # Record skipped match (only once)
-                                            logger.warning(f"Failed to place bet for {tracker.betfair_event_name}")
-                                            print(f"  ⚠ Could not place bet for {tracker.betfair_event_name}")
-                                            
-                                            if skipped_matches_writer:
-                                                # Prepare skipped match data
-                                                skipped_data = {
-                                                    "match_name": tracker.betfair_event_name,
-                                                    "competition": tracker.competition_name,
-                                                    "minute": tracker.current_minute if tracker.current_minute >= 0 else "N/A",
-                                                    "status": tracker.state.value if hasattr(tracker.state, 'value') else str(tracker.state),
-                                                    "timestamp": datetime.now()
-                                                }
-                                                
-                                                # If bet_result is a dict with skip information, use it
-                                                if bet_result and isinstance(bet_result, dict):
-                                                    skipped_data["reason"] = bet_result.get("reason", bet_result.get("skip_reason", "Unknown reason"))
-                                                    skipped_data["best_back"] = bet_result.get("bestBackPrice")
-                                                    skipped_data["best_lay"] = bet_result.get("bestLayPrice")
-                                                    skipped_data["spread_ticks"] = bet_result.get("spread_ticks")
-                                                    skipped_data["current_odds"] = bet_result.get("bestLayPrice") or bet_result.get("calculatedLayPrice")
-                                                else:
-                                                    # bet_result is None or invalid
-                                                    skipped_data["reason"] = "Bet execution failed (no details available)"
-                                                    skipped_data["best_back"] = None
-                                                    skipped_data["best_lay"] = None
-                                                    skipped_data["spread_ticks"] = None
-                                                    skipped_data["current_odds"] = None
-                                                
-                                                try:
-                                                    skipped_matches_writer.write_skipped_match(skipped_data)
-                                                    logger.info(f"Skipped match recorded: {tracker.betfair_event_name} - {skipped_data['reason']}")
-                                                except Exception as e:
-                                                    logger.error(f"Error writing skipped match: {str(e)}")
-                            else:
-                                # Try to match with Live API
-                                live_match = match_matcher.match_betfair_to_live_api(
-                                    betfair_event, live_matches, competition_name
+                                                logger.info(f"🔄 Competition mapping refreshed: {new_count} competition(s) (no change)")
+                                except Exception as e:
+                                    logger.warning(f"Failed to refresh competition mapping: {str(e)}")
+                            
+                            # Force refresh: get fresh Betfair markets and LiveScore matches
+                            try:
+                                markets = market_service.list_market_catalogue(
+                                    event_type_ids=event_type_ids,
+                                    competition_ids=competition_ids if competition_ids else None,
+                                    in_play_only=in_play_only
                                 )
+                                if markets:
+                                    markets = filter_match_specific_markets(markets)
                                 
-                                if live_match:
-                                    matched_count += 1
-                                    live_match_id = str(live_match.get("id", ""))
-                                    # Get match details for logging
-                                    live_home, live_away = parse_match_teams(live_match)
-                                    live_comp = parse_match_competition(live_match)
-                                    
-                                    # Get match tracking config
-                                    match_tracking_config = config.get("match_tracking", {})
-                                    goal_window = match_tracking_config.get("goal_detection_window", {})
-                                    start_minute = goal_window.get("start_minute", 60)
-                                    end_minute = goal_window.get("end_minute", 74)
-                                    var_check_enabled = match_tracking_config.get("var_check_enabled", True)
-                                    target_over = match_tracking_config.get("target_over", None)
-                                    early_discard_enabled = match_tracking_config.get("early_discard_enabled", True)
-                                    
-                                    # Get competition name from Live API (for Excel matching)
-                                    live_competition_name = parse_match_competition(live_match)
-                                    # Use Live API competition name if available, otherwise fallback to Betfair
-                                    tracker_competition_name = live_competition_name if live_competition_name else competition_name
-                                    
-                                    # Parse initial match data to check if we should start tracking
-                                    score = parse_match_score(live_match)
-                                    minute = parse_match_minute(live_match)
-                                    
-                                    # Check if match is too late to start tracking (must be <= 74 minutes)
-                                    if minute > 74:
-                                        # Get target scores from Excel for logging
-                                        project_root = Path(__file__).parent.parent
-                                        excel_path = project_root / "competitions" / "Competitions_Results_Odds_Stake.xlsx"
-                                        target_scores = []
-                                        if excel_path.exists():
-                                            from logic.qualification import get_competition_targets
-                                            targets = get_competition_targets(tracker_competition_name, str(excel_path))
-                                            if targets:
-                                                target_scores = sorted(list(targets))
-                                        
-                                        targets_str = ", ".join(target_scores) if target_scores else "N/A"
-                                        match_status = live_match.get("status", "N/A")
-                                        reason = f"minute {minute} > 74"
-                                        skip_message = f"⏭️  Skipping: {reason} - {tracker_competition_name} - {betfair_event_name} ({score}) [{targets_str}] {match_status}"
-                                        logger.info(f"Skipping tracking for {betfair_event_name}: {reason} - Competition: {tracker_competition_name}, Score: {score}, Targets: [{targets_str}], Status: {match_status}")
-                                        print(f"  {skip_message}")
-                                        continue
-                                    
-                                    # Create tracker (only if minute <= 74)
-                                    tracker = MatchTracker(
-                                        betfair_event_id=event_id,
-                                        betfair_event_name=betfair_event.get("name", "N/A"),
-                                        live_match_id=live_match_id,
-                                        competition_name=tracker_competition_name,
-                                        start_minute=start_minute,
-                                        end_minute=end_minute,
-                                        zero_zero_exception_competitions=zero_zero_exception_competitions,
-                                        var_check_enabled=var_check_enabled,
-                                        target_over=target_over,
-                                        early_discard_enabled=early_discard_enabled
-                                    )
-                                    
-                                    # Get goals from events endpoint if match is in monitoring window
-                                    goals = []
-                                    if minute >= start_minute or minute >= 60:
-                                        # Fetch events to get goals timeline
-                                        if live_score_client:
-                                            events_data = live_score_client.get_match_details(live_match_id)
-                                            if events_data:
-                                                goals = parse_goals_timeline(events_data)
-                                            else:
-                                                # Fallback: try to parse from live_match
-                                                goals = parse_goals_timeline(live_match)
-                                    else:
-                                        # For early minutes, try to parse from live_match (may be empty)
-                                        goals = parse_goals_timeline(live_match)
-                                    
-                                    tracker.update_match_data(score, minute, goals)
-                                    # Get Excel path for early discard check
-                                    project_root = Path(__file__).parent.parent
-                                    excel_path = project_root / "competitions" / "Competitions_Results_Odds_Stake.xlsx"
-                                    
-                                    tracker.update_state(excel_path=str(excel_path) if excel_path.exists() else None)
-                                    
-                                    # Add to manager
-                                    match_tracker_manager.add_tracker(tracker)
-                                    
-                                    # Collect match info for batch logging
-                                    new_tracked_matches.append({
-                                        "name": tracker.betfair_event_name,
-                                        "minute": minute,
-                                        "score": score,
-                                        "competition": tracker_competition_name,
-                                        "excel_path": str(excel_path) if excel_path.exists() else None
-                                    })
-                                else:
-                                    # Only log mismatch if there are live matches available (to reduce noise)
-                                    if live_matches:
-                                        logger.debug(f"No match found for: {betfair_event_name}")
+                                # Rebuild unique_events from fresh markets
+                                unique_events: Dict[str, Dict[str, Any]] = {}
+                                for market in markets:
+                                    event = market.get("event", {})
+                                    event_id = event.get("id", "")
+                                    if event_id and event_id not in unique_events:
+                                        unique_events[event_id] = {
+                                            "event": event,
+                                            "competition": market.get("competition", {}),
+                                            "markets": []
+                                        }
+                                    if event_id:
+                                        unique_events[event_id]["markets"].append(market)
+                                
+                                # Get fresh LiveScore matches
+                                live_matches = live_score_client.get_live_matches()
+                                if isinstance(live_matches, list):
+                                    cached_live_matches = live_matches
+                                last_live_api_call_time = current_time
+                                
+                                # Log refresh
+                                logger.info(f"\n[{iteration}] Betfair: {len(unique_events)} live match(es) available (refresh)")
+                                for i, event_data in enumerate(list(unique_events.values()), 1):
+                                    event = event_data["event"]
+                                    event_name = event.get("name", "N/A")
+                                    competition_name = event_data["competition"].get("name", "N/A")
+                                    market_count = len(event_data["markets"])
+                                    logger.info(f"  [{i}] {event_name} ({competition_name}) - {market_count} market(s)")
+                                
+                                if live_matches:
+                                    logger.info(f"Live API: {len(live_matches)} live match(es) available (refresh)")
+                                    actual_live = [lm for lm in live_matches if "FINISHED" not in str(lm.get("status", "")).upper()]
+                                    for i, lm in enumerate(actual_live, 1):
+                                        home, away = parse_match_teams(lm)
+                                        comp = parse_match_competition(lm)
+                                        minute = parse_match_minute(lm)
+                                        score = parse_match_score(lm)
+                                        status = lm.get("status", "N/A")
+                                        logger.info(f"  [{i}] {home} v {away} ({comp}) - {score} @ {minute}' [{status}]")
+                                
+                                last_matching_refresh_time = current_time
+                            except Exception as e:
+                                logger.warning(f"Failed to refresh matching data: {str(e)}")
+                                should_refresh_matching = False
+                        
+                        # Perform matching (using function)
+                        matched_count, total_events, new_tracked_matches = perform_matching(
+                            unique_events=unique_events,
+                            live_matches=live_matches,
+                            live_score_client=live_score_client,
+                            match_matcher=match_matcher,
+                            match_tracker_manager=match_tracker_manager,
+                            config=config,
+                            zero_zero_exception_competitions=zero_zero_exception_competitions,
+                            market_service=market_service,
+                            betting_service=betting_service,
+                            bet_tracker=bet_tracker,
+                            excel_writer=excel_writer,
+                            skipped_matches_writer=skipped_matches_writer,
+                            sound_notifier=sound_notifier,
+                            telegram_notifier=telegram_notifier,
+                            iteration=iteration,
+                            is_refresh=should_refresh_matching,
+                            matching_refresh_interval=matching_refresh_interval
+                        )
                         
                         # Log tracking list for newly matched matches
                         if new_tracked_matches:
+                            if should_refresh_matching:
+                                logger.info("🆕 New matches detected during refresh:")
+                                for match_info in new_tracked_matches:
+                                    logger.info(f"  - {match_info['name']} (min {match_info['minute']}, score {match_info['score']})")
+                                logger.info("")
+                            
                             logger.info("📊 Tracking List")
                             logger.info("")
                             
@@ -588,26 +757,52 @@ def main():
                             
                             logger.info("")
                         
-                        # Log matching summary (only when count changes or first iteration)
+                        # Log matching summary
                         if not hasattr(main, '_last_matched_summary'):
                             main._last_matched_summary = None
                         
                         current_summary = f"{matched_count}/{total_events}"
-                        if total_events > 0 and (iteration == 1 or main._last_matched_summary != current_summary):
+                        should_log_summary = False
+                        if should_refresh_matching:
+                            # Always log summary during refresh
+                            should_log_summary = True
+                        elif total_events > 0 and (iteration == 1 or main._last_matched_summary != current_summary):
+                            should_log_summary = True
+                        
+                        if should_log_summary and total_events > 0:
                             if matched_count > 0:
-                                # Show boxed message when matches are found
-                                message = f"Matched: {matched_count}/{total_events} event(s) matched and started tracking"
-                                boxed_message = format_boxed_message(message)
-                                logger.info(message)
-                                print(boxed_message)  # Keep print for boxed message (special formatting)
+                                if should_refresh_matching:
+                                    new_count = len(new_tracked_matches)
+                                    already_tracking = matched_count - new_count
+                                    if new_count > 0:
+                                        message = f"Matched: {matched_count}/{total_events} event(s) matched ({new_count} new match(es) added to tracking, {already_tracking} already tracking)"
+                                    else:
+                                        message = f"Matched: {matched_count}/{total_events} event(s) matched (0 new matches added - all already tracking)"
+                                    logger.info(message)
+                                    logger.info(f"✅ Matching refresh completed: {new_count} new match(es) added, {already_tracking} match(es) already tracking")
+                                else:
+                                    message = f"Matched: {matched_count}/{total_events} event(s) matched and started tracking"
+                                    boxed_message = format_boxed_message(message)
+                                    logger.info(message)
+                                    print(boxed_message)
                             elif live_matches:
-                                # No box for 0 matches, just regular log
-                                logger.info(f"Matched: 0/{total_events} Betfair event(s) matched (checking {len(live_matches)} Live API match(es))")
+                                if should_refresh_matching:
+                                    existing_count = len(match_tracker_manager.get_all_trackers())
+                                    logger.info(f"No new matches detected during refresh (all matches already being tracked) - {existing_count} match(es) currently tracking")
+                                else:
+                                    logger.info(f"Matched: 0/{total_events} Betfair event(s) matched (checking {len(live_matches)} Live API match(es))")
                             else:
-                                # No box for no live matches, just regular log
-                                logger.info(f"Matched: {total_events} Betfair event(s) found, but no Live API matches available")
+                                if should_refresh_matching:
+                                    existing_count = len(match_tracker_manager.get_all_trackers())
+                                    logger.info(f"No new matches detected during refresh (no Live API matches available) - {total_events} Betfair event(s) available, {existing_count} match(es) currently tracking")
+                                else:
+                                    logger.info(f"Matched: {total_events} Betfair event(s) found, but no Live API matches available")
                             
                             main._last_matched_summary = current_summary
+                        
+                        # Set last_matching_refresh_time on first iteration
+                        if last_matching_refresh_time is None:
+                            last_matching_refresh_time = current_time
                         
                         # Process finished matches (Phase 5: Bet Tracking)
                         if bet_tracker and excel_writer:
