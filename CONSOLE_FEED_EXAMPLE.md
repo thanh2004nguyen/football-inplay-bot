@@ -77,6 +77,11 @@ SE Palmeiras v EC Vitoria Salvador | 60' | 🟢 0-0 | 0-0, 0-1, 1-0 | TARGET (TR
 🎯 0 match(es) ready for bet placement
 ```
 
+**Note:** 
+- **Gremio v Vasco da Gama** has green dot (🟢) because score 2-1 was reached by a goal scored between 60-74 minutes
+- **SE Palmeiras** has green dot (🟢) because it's minute 60 with score 0-0, and 0-0 is in the target list (special case)
+- **Botafogo FR** has NO green dot because score 1-0 was already present before minute 60 and no goal was scored in 60-74 window yet
+
 #### 3.2. State Changes (Real-time Events)
 ```
 Match QUALIFIED: Gremio v Vasco da Gama - Goal in 60-74 window (minute 68, team: Gremio)
@@ -105,17 +110,42 @@ Botafogo FR v Sport Recife | 68' | 1-0 | 0-0, 1-0, 1-1 | TRACKING
 🎯 1 match(es) ready for bet placement
 ```
 
-#### 3.5. Skipped Matches Section
+**Note:** The summary "🎯 1 match(es) ready for bet placement" only includes matches that:
+- Are still TARGET at minute 75
+- Current score is still in target list
+- Under X.5 price ≥ reference odds (from Excel)
+- Spread ≤ 4 ticks
+- Excel config exists for that competition and score
+
+#### 3.5. Match Loses TARGET Status (Goal After 60-74 Changes Score)
+```
+[2] Tracking 2 match(es) from minute 60-74:
+
+============================================================================================================
+Match | Min | Score | Targets | State
+------------------------------------------------------------------------------------------------------------
+Gremio v Vasco da Gama | 76' | 3-1 | 1-1, 2-1, 2-2 | TRACKING
+Botafogo FR v Sport Recife | 70' | 1-0 | 0-0, 1-0, 1-1 | TRACKING
+============================================================================================================
+
+🎯 0 match(es) ready for bet placement
+```
+
+**Note:** Gremio lost TARGET status because a goal after minute 74 changed the score from 2-1 (in targets) to 3-1 (not in targets).
+
+#### 3.6. Skipped Matches Section (At Minute 75)
 ```
 [SKIPPED] Gremio v Vasco da Gama – Reason: spread > 4 ticks
 [SKIPPED] Palmeiras v EC Vitoria – Reason: Under price below reference odds
+[SKIPPED] Botafogo FR v Sport Recife – Reason: Current score not in target list at 75'
+[SKIPPED] Santos v Mirassol – Reason: No Excel config for this score
 ```
 
 ---
 
 ### 4. Bet Placement
 
-#### 4.1. Bet Placed Successfully
+#### 4.1. Bet Placed Successfully (At Exactly Minute 75')
 ```
 Attempting to place lay bet for Gremio v Vasco da Gama (minute 75, score: 2-1)
 
@@ -135,6 +165,15 @@ BetId: 123456789
 Bet placed successfully: BetId=123456789, Stake=6.82, Liability=15.00
 Bet matched immediately: BetId=123456789, SizeMatched=6.82
 ```
+
+**Note:** The bet is evaluated and placed at exactly minute 75' (not at 76', 77', etc.). The bot:
+1. Re-checks that current score (2-1) is still in target list
+2. Reads from Excel: stake % (5%) and reference odds (1.75) for this competition and score
+3. Checks Under X.5 best back (1.80) ≥ reference odds (1.75) → OK
+4. Checks Over X.5 spread (3 ticks) ≤ 4 ticks → OK
+5. Calculates liability: Bankroll (300.00) × 5% = 15.00
+6. Calculates lay stake: 15.00 / (3.20 - 1) = 6.82
+7. Places LAY bet on Over 2.5 at best lay (3.10) + 2 ticks = 3.20
 
 #### 4.2. Updated Table After Bet
 ```
@@ -175,26 +214,57 @@ Matched: 0 Betfair event(s) found, but no Live API matches available
 2. **Tracking Table**: Displays matches in 60-74 minute window with:
    - Match name
    - Current minute
-   - Current score (🟢 green if score is in targets)
+   - Current score (🟢 green dot if TARGET - score reached in 60-74 window or 0-0 at 60')
    - Target scores from Excel
-   - Current state (WAITING_60, TRACKING, QUALIFIED, READY_FOR_BET, etc.)
-3. **Real-time Updates**: Table updates every 10 seconds
-4. **State Indicators**:
-   - `WAITING_60`: Match hasn't reached minute 60 yet
-   - `TRACKING`: Monitoring for goals in 60-74 window
-   - `QUALIFIED`: Goal detected in 60-74 window
-   - `READY_FOR_BET`: Match is at minute 75+ and qualified
-   - `TARGET`: Current score matches one of the target scores
-   - `[STALE]`: Match data hasn't updated in > 2 minutes
-5. **Event Logs**: Clear messages for qualification, bet placement, and discards
-6. **Summary**: Shows count of matches ready for bet placement
+   - Current state (TRACKING, TARGET (TRACKING), TARGET (READY_FOR_BET), etc.)
+3. **Real-time Updates**: Table updates every 10 seconds (or as configured)
+4. **Green Dot (🟢) Logic**:
+   - Shows green dot if current score is in target list AND score was reached by a goal between 60-74 minutes
+   - Special case: 0-0 at minute 60' gets green dot immediately if 0-0 is in target list
+   - NO green dot if score was already present before minute 60 and no goal in 60-74 window
+   - Green dot is removed if later goal changes score to something not in target list
+5. **Summary of Ready Matches**: 
+   - Shows "🎯 X match(es) ready for bet placement"
+   - Only includes matches that are:
+     - Still TARGET at minute 75
+     - Current score still in target list
+     - Under X.5 price ≥ reference odds (from Excel)
+     - Spread ≤ 4 ticks
+     - Excel config exists for that competition and score
+6. **Bet Placement**: 
+   - Triggered at exactly minute 75' (not at 76', 77', etc.)
+   - Re-checks all conditions before placing bet
+   - Shows detailed [BET PLACED] block with all information
+7. **Skipped Matches**: 
+   - Logs matches that entered 60-74 tracking but didn't trigger bet at 75'
+   - Reasons include: spread > 4 ticks, Under price below reference, score not in targets, no Excel config
+8. **Event Logs**: Clear messages for qualification, bet placement, and discards
 
 ---
 
-## Color Coding (if terminal supports):
-- 🟢 Green circle: Score matches target
-- ✓ Checkmark: Match qualified
-- 🎯 Target: Ready for bet
-- ✘ Cross: Match discarded
-- ⏭️ Skip: Match skipped (too late)
+## Color Coding & Symbols:
+- 🟢 **Green dot**: Match is TARGET (score in targets AND reached in 60-74 window, or 0-0 at 60')
+- ✓ **Checkmark**: Match qualified (goal in 60-74 or 0-0 exception)
+- 🎯 **Target**: Match ready for bet placement (at 75' and meets all conditions)
+- ✘ **Cross**: Match discarded (no goal in 60-74, no 0-0 exception)
+- ⏭️ **Skip**: Match skipped (too late to start tracking, or conditions not met at 75')
+
+## Important Notes:
+
+1. **Green Dot Rules**:
+   - Green dot appears ONLY if score was reached by a goal between 60-74 minutes
+   - Exception: 0-0 at minute 60' gets green dot immediately if 0-0 is in target list
+   - If score was already present before 60' and no goal in 60-74 → NO green dot
+   - If match has green dot but later goal changes score → green dot is removed
+
+2. **Bet Trigger**:
+   - Bet is evaluated and placed at exactly minute 75' (not before, not after)
+   - All conditions are re-checked at minute 75'
+   - If any condition fails, match is skipped with clear reason
+
+3. **Summary Count**:
+   - "🎯 X match(es) ready for bet placement" only counts matches that:
+     - Are at minute 75+
+     - Still have TARGET status
+     - Meet ALL conditions (score, odds, spread, Excel config)
 
