@@ -430,7 +430,7 @@ def main():
             print("✗ Failed to login after multiple attempts")
             return 1
         
-        # Initialize Service Factory (for test mode support)
+        # Initialize Service Factory
         from core.service_factory import ServiceFactory
         service_factory = ServiceFactory(config)
         

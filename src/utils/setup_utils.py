@@ -50,7 +50,7 @@ def initialize_all_services(config: dict, session_token: str, service_factory: A
         account_endpoint=betfair_config.get("account_endpoint", "https://api.betfair.com/exchange/account/rest/v1.0")
     )
     
-    if not service_factory.is_test_mode and hasattr(market_service, 'max_data_weight_points'):
+    if hasattr(market_service, 'max_data_weight_points'):
         market_service.max_data_weight_points = max_data_weight_points
     
     services['market_service'] = market_service
@@ -206,11 +206,20 @@ def initialize_all_services(config: dict, session_token: str, service_factory: A
     # Initialize Telegram Notifier
     if notifications_config.get("telegram_enabled", False):
         try:
-            services['telegram_notifier'] = TelegramNotifier(notifications_config)
-        except Exception:
+            telegram_notifier = TelegramNotifier(notifications_config)
+            services['telegram_notifier'] = telegram_notifier
+            telegram_config = notifications_config.get("telegram", {})
+            chat_id = telegram_config.get("chat_id", "N/A")
+            if telegram_notifier and telegram_notifier.enabled:
+                checklist_items.append(f"  ✓ Telegram notifications: Chat ID {chat_id}")
+            else:
+                checklist_items.append(f"  ✗ Telegram notifications: Disabled (configuration incomplete)")
+        except Exception as e:
             services['telegram_notifier'] = None
+            checklist_items.append(f"  ✗ Telegram notifications: Disabled (initialization failed)")
     else:
         services['telegram_notifier'] = None
+        checklist_items.append(f"  ✗ Telegram notifications: Disabled")
     
     # Setup monitoring config and competition mapping
     monitoring_config = config["monitoring"]
