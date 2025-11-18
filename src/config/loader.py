@@ -33,10 +33,29 @@ def load_config(config_path: str = "config/config.json") -> Dict[str, Any]:
         json.JSONDecodeError: If config file is invalid JSON
     """
     # Load environment variables from .env file if it exists
+    # Try to find .env in project root (same directory as config file's parent)
     if HAS_DOTENV:
-        env_path = Path(".env")
+        # First try relative to config file location
+        config_file_path = Path(config_path)
+        if config_file_path.is_absolute():
+            project_root = config_file_path.parent.parent  # config/config.json -> project root
+        else:
+            # If relative path, try to find from current directory
+            project_root = Path.cwd()
+            # Try to find project root by looking for config directory
+            for parent in [Path.cwd()] + list(Path.cwd().parents):
+                if (parent / "config" / "config.json").exists():
+                    project_root = parent
+                    break
+        
+        env_path = project_root / ".env"
         if env_path.exists():
             load_dotenv(env_path)
+        else:
+            # Fallback: try current directory
+            env_path = Path(".env")
+            if env_path.exists():
+                load_dotenv(env_path)
     
     # Load JSON config
     config_file = Path(config_path)
