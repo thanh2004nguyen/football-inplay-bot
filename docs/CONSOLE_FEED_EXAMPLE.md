@@ -34,6 +34,13 @@ Monitoring phase started – tracking live matches...
   [4] Santos v Mirassol (Brazilian Serie A) - 1 market(s)
 ```
 
+**Important Note - Live Match Verification:**
+- Bot uses **MarketBook API** to verify that matches are actually live (not just marked as inPlay in MarketCatalogue)
+- Only matches with `status = "OPEN"` AND `inPlay = true` are considered truly live
+- This prevents false positives where MarketCatalogue shows `inPlay = true` but market is actually SUSPENDED or CLOSED
+- Matches are filtered by Excel competitions before verification (if competitions are configured)
+- **Flow:** MarketCatalogue (filter by Excel) → MarketBook verification (status=OPEN + inPlay=true) → Only verified live matches are processed
+
 #### 2.2. Live API Matches (Every 60 seconds)
 ```
 Live API: 4 live match(es) available
@@ -257,20 +264,27 @@ Matched: 0 Betfair event(s) found, but no Live API matches available
 
 ## Key Features:
 
-1. **Live Matches List**: Shows all available matches from Betfair and Live API
-2. **Tracking Table**: Displays matches in 60-74 minute window with:
+1. **Live Match Verification**: 
+   - Bot verifies matches using MarketBook API to ensure they are actually live
+   - Only matches with `status = "OPEN"` AND `inPlay = true` are processed
+   - Prevents false positives from MarketCatalogue (which may show inPlay=true for SUSPENDED/CLOSED markets)
+   - Matches are filtered by Excel competitions before verification (if configured)
+   - **Why this matters:** MarketCatalogue can return markets with `inPlay = true` but status = SUSPENDED/CLOSED, which are not actually live
+
+2. **Live Matches List**: Shows all available matches from Betfair and Live API
+3. **Tracking Table**: Displays matches in 60-74 minute window with:
    - Match name
    - Current minute
    - Current score (🟢 green dot if TARGET - score reached in 60-74 window or 0-0 at 60')
    - Target scores from Excel
    - Current state (TRACKING, TARGET (TRACKING), TARGET (READY_FOR_BET), etc.)
-3. **Real-time Updates**: Table updates every 10 seconds (or as configured)
-4. **Green Dot (🟢) Logic**:
+4. **Real-time Updates**: Table updates every 10 seconds (or as configured)
+5. **Green Dot (🟢) Logic**:
    - Shows green dot if current score is in target list AND score was reached by a goal between 60-74 minutes
    - Special case: 0-0 at minute 60' gets green dot immediately if 0-0 is in target list
    - NO green dot if score was already present before minute 60 and no goal in 60-74 window
    - Green dot is removed if later goal changes score to something not in target list
-5. **Summary of Ready Matches**: 
+6. **Summary of Ready Matches**: 
    - Shows "🎯 X match(es) ready for bet placement"
    - Only includes matches that are:
      - Still TARGET at minute 75
@@ -278,18 +292,18 @@ Matched: 0 Betfair event(s) found, but no Live API matches available
      - Under X.5 price ≥ reference odds (from Excel)
      - Spread ≤ 4 ticks
      - Excel config exists for that competition and score
-6. **Bet Placement**: 
+7. **Bet Placement**: 
    - Entry window: **entire 75th minute (75:00 to 75:59)**
    - Conditions are checked continuously throughout minute 75
    - Bet is placed **as soon as all conditions are satisfied simultaneously** during minute 75
    - **Never places bet after minute 75 has passed** (i.e., nothing at 76', 77', etc.)
    - If conditions never all true during minute 75 → match is expired
    - Shows detailed [BET PLACED] block with all information
-7. **Skipped Matches**: 
+8. **Skipped Matches**: 
    - Logs matches that entered 60-74 tracking but didn't trigger bet at 75'
    - Reasons include: spread > 4 ticks, Under price below reference, score not in targets, no Excel config
-8. **Event Logs**: Clear messages for qualification, bet placement, and discards
-9. **Automatic Matching Refresh**: 
+9. **Event Logs**: Clear messages for qualification, bet placement, and discards
+10. **Automatic Matching Refresh**: 
    - Betfair ↔ LiveScore mapping is automatically refreshed every 60 minutes
    - Match cache is cleared during refresh to allow new events to be matched
    - New Betfair events that appear after bot startup can be matched with LiveScore matches that become available
@@ -306,13 +320,24 @@ Matched: 0 Betfair event(s) found, but no Live API matches available
 
 ## Important Notes:
 
-1. **Green Dot Rules**:
+1. **Live Match Verification**:
+   - Bot uses a two-step verification process:
+     - **Step 1:** MarketCatalogue API - Gets markets with `inPlay = true` filtered by Excel competitions
+     - **Step 2:** MarketBook API - Verifies actual status (`status = "OPEN"` AND `inPlay = true`)
+   - Only matches that pass both steps are considered truly live
+   - This ensures bot only processes matches that are actually being played right now
+   - **Why MarketCatalogue alone is not enough:**
+     - MarketCatalogue may return `inPlay = true` for markets that are SUSPENDED, CLOSED, or scheduled
+     - MarketBook provides the actual current status of the market
+     - Example: A match may show `inPlay = true` in MarketCatalogue but `status = "SUSPENDED"` in MarketBook → Not actually live!
+
+2. **Green Dot Rules**:
    - Green dot appears ONLY if score was reached by a goal between 60-74 minutes
    - Exception: 0-0 at minute 60' gets green dot immediately if 0-0 is in target list
    - If score was already present before 60' and no goal in 60-74 → NO green dot
    - If match has green dot but later goal changes score → green dot is removed
 
-2. **Bet Trigger (Entry Window)**:
+3. **Bet Trigger (Entry Window)**:
    - Entry window: **entire 75th minute (75:00 to 75:59)**
    - Conditions are checked continuously throughout minute 75
    - Bet is placed **as soon as all conditions are satisfied simultaneously** during minute 75
@@ -321,27 +346,143 @@ Matched: 0 Betfair event(s) found, but no Live API matches available
    - If conditions never all true during minute 75 → match is expired (no bet placed)
    - If any condition fails during minute 75 → match is skipped with clear reason
 
-3. **Summary Count**:
+4. **Summary Count**:
    - "🎯 X match(es) ready for bet placement" only counts matches that:
      - Are at minute 75+
      - Still have TARGET status
      - Meet ALL conditions (score, odds, spread, Excel config)
 
-4. **0-0 Exception Logic**:
+5. **0-0 Exception Logic**:
    - If 0-0 is in the target list and match is 0-0 at minute 60: match is qualified immediately
    - Match stays TARGET (TRACKING) even if no goal is scored between 60-74
    - At minute 75, if still 0-0 and all conditions OK: becomes TARGET (READY_FOR_BET)
    - Message "Disqualified (no goal in 60-74, no 0-0 exception)" appears ONLY when 0-0 is NOT in target list
 
-5. **Matching Refresh**:
+6. **Matching Refresh**:
    - Betfair ↔ LiveScore mapping refreshes automatically every 60 minutes
    - Match cache is cleared to allow re-matching of new events
    - This ensures new Betfair events that appear after bot startup can be tracked
 
-6. **Bet Placement Entry Window**:
+7. **Bet Placement Entry Window**:
    - Entry window is the **entire 75th minute (75:00 to 75:59)**
    - Bot checks conditions continuously throughout minute 75
    - Bet is placed **once** as soon as all conditions are satisfied simultaneously
    - If conditions never all true during minute 75 → match expires (no bet placed)
    - **Never places bet after minute 75 has passed** (minute > 75)
+
+---
+
+## Issues Fixed (Latest Updates):
+
+### Issue 1: Refresh Mapping Interval Too Fast ✅
+**Problem:** Matching refresh was running every 30 seconds, causing excessive API calls and noisy logs.
+
+**Solution:** Changed refresh interval from 30 seconds to 60 minutes as requested.
+
+**Files Modified:**
+- `src/main.py`: Updated `matching_refresh_interval` from 30 to 3600 seconds
+
+---
+
+### Issue 2: Bot Tracking Matches Not in Excel ✅
+**Problem:** Bot was displaying and tracking matches from competitions not in the Excel file (e.g., showing Argentina matches when only Brazilian Serie A was in Excel).
+
+**Solution:** 
+- Added filtering to only fetch markets from competitions that exist in Excel
+- Uses `competition_ids` from Excel mapping to filter Betfair markets
+- Only matches with competitions in Excel are processed
+
+**Files Modified:**
+- `src/utils/setup_utils.py`: Loads competition IDs from Excel
+- `src/main.py`: Filters markets by `competition_ids` before processing
+
+---
+
+### Issue 3: Mapping Betfair ↔ LiveScore Wrong Flow ✅
+**Problem:** Bot was fetching all live matches from Betfair first, then trying to match with Excel, instead of filtering by Excel competitions first.
+
+**Solution:**
+- Correct flow: Load Excel competitions → Get Betfair competition IDs → Filter Betfair markets by these IDs → Match with LiveScore API
+- Markets are now filtered by Excel competitions before matching with LiveScore
+
+**Files Modified:**
+- `src/main.py`: Reordered logic to filter by Excel competitions first
+- `src/config/competition_mapper.py`: Enhanced mapping to get competition IDs from Excel
+
+---
+
+### Issue 4: Some Matches Show [N/A] Target List ✅
+**Problem:** Some matches displayed [N/A] for target scores even though the competition existed in Excel, due to competition name mismatch between Betfair/LiveScore API and Excel.
+
+**Solution:**
+- **Added ID-based matching**: Competition matching now uses both ID and name
+- **Priority order:**
+  1. Match by competition ID (from `Competition-Betfair` column in Excel) - most accurate
+  2. Match by exact name
+  3. Match by normalized name (case-insensitive, special characters removed)
+  4. Match by "ID_Name" format
+- **Enhanced Excel loading**: Reads `Competition-Betfair` column to extract competition IDs
+- **Fallback logic**: If Live API competition name doesn't match, tries Betfair competition name
+
+**Files Modified:**
+- `src/logic/qualification.py`: 
+  - Added `competition_id` parameter to `get_competition_targets()`
+  - Enhanced `load_competition_map_from_excel()` to load Competition-Betfair column
+  - Added ID-based matching logic with priority
+- `src/main.py`: Passes competition ID from Betfair API to matching functions
+
+**Result:** Significantly reduced [N/A] occurrences by matching competitions more accurately using both ID and name.
+
+---
+
+### Issue 5: Using Wrong Source / Cloudflare Warnings ⚠️
+**Problem:** User reported Cloudflare warnings when accessing Betfair website (apps.betfair.com, betfair.it).
+
+**Solution:** 
+- Bot uses **Betfair API** and **Stream API** only, not web scraping
+- No changes needed - bot already uses correct API endpoints
+- Cloudflare warnings are not relevant as bot doesn't access websites directly
+
+---
+
+### Issue 6: Logging Missing Reasons for Matched vs Skipped ✅
+**Problem:** Log only showed "Matched: 1/4 event(s)" but didn't explain why 3 events were not matched.
+
+**Solution:**
+- **Added detailed rejection reason analysis**: Function `analyze_rejection_reason()` in `matcher.py`
+- **Logs specific reasons** for each unmatched event:
+  - Team names don't match (with similarity score)
+  - Competition mismatch
+  - Kick-off time mismatch
+  - No Live API matches available
+- **Enhanced logging output**: After "Matched: X/Y event(s)", shows detailed list of unmatched events with reasons
+
+**Files Modified:**
+- `src/football_api/matcher.py`: 
+  - Added `analyze_rejection_reason()` function
+  - Enhanced `match_betfair_to_live_api()` to collect unmatched events with reasons
+- `src/main.py`: 
+  - Logs detailed rejection reasons for unmatched events
+  - Shows each unmatched event with specific reason (team mismatch, competition mismatch, etc.)
+
+**Example Output:**
+```
+Matched: 1/4 event(s)
+❌ 3 event(s) not matched:
+  - Team A v Team B (Competition Name): Team names don't match (best similarity: 0.45, required: 0.70); Competition mismatch
+  - Team C v Team D (Competition Name): No Live API matches available
+```
+
+---
+
+## Summary of All Fixes:
+
+| Issue | Status | Description |
+|-------|--------|-------------|
+| 1. Refresh interval too fast | ✅ Fixed | Changed from 30s to 60 minutes |
+| 2. Tracking matches not in Excel | ✅ Fixed | Added Excel competition filtering |
+| 3. Wrong mapping flow | ✅ Fixed | Filter by Excel competitions first |
+| 4. [N/A] target list | ✅ Fixed | Added ID-based matching + name matching |
+| 5. Cloudflare warnings | ⚠️ N/A | Bot uses API, not web scraping |
+| 6. Missing rejection reasons | ✅ Fixed | Added detailed logging for unmatched events |
 

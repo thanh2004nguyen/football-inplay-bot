@@ -428,8 +428,98 @@ class MatchMatcher:
                        f"with Live API match (ID: {live_match_id}, score: {best_score:.2f})")
             return best_match
         
-        logger.debug(f"No match found for Betfair event '{betfair_event_name}' (ID: {betfair_event_id})")
+        # Return None if no match found (will be handled by caller to determine rejection reason)
         return None
+    
+    def analyze_rejection_reason(self, betfair_event: Dict[str, Any], 
+                                 live_matches: List[Dict[str, Any]],
+                                 betfair_competition_name: str = "") -> str:
+        """
+        Analyze why a Betfair event was not matched with any Live API match
+        
+        Args:
+            betfair_event: Betfair event dictionary
+            live_matches: List of live matches from Live API
+            betfair_competition_name: Competition name from Betfair (optional)
+        
+        Returns:
+            Rejection reason string
+        """
+        if not live_matches:
+            return "No Live API matches available"
+        
+        betfair_event_name = betfair_event.get("name", "")
+        betfair_teams = betfair_event_name.split(" v ")
+        if len(betfair_teams) != 2:
+            return f"Could not parse Betfair event name: {betfair_event_name}"
+        
+        betfair_home = betfair_teams[0].strip()
+        betfair_away = betfair_teams[1].strip()
+        
+        # Check if any live match has similar teams
+        best_team_match_score = 0.0
+        best_competition_match = False
+        best_time_match = False
+        
+        for live_match in live_matches:
+            try:
+                from football_api.parser import parse_match_teams, parse_match_competition
+                live_home, live_away = parse_match_teams(live_match)
+                live_competition = parse_match_competition(live_match)
+                
+                # Check team matching
+                teams_match = self.match_teams(betfair_home, betfair_away, live_home, live_away)
+                if teams_match:
+                    # Calculate detailed match score
+                    home_sim = self.calculate_team_similarity(betfair_home, live_home)
+                    away_sim = self.calculate_team_similarity(betfair_away, live_away)
+                    team_score = (home_sim + away_sim) / 2
+                    if team_score > best_team_match_score:
+                        best_team_match_score = team_score
+                
+                # Check competition matching
+                if betfair_competition_name:
+                    comp_match = self.match_competition(betfair_competition_name, live_competition)
+                    if comp_match:
+                        best_competition_match = True
+                
+                # Check time matching
+                betfair_time = None
+                if "startTime" in betfair_event:
+                    try:
+                        betfair_time = datetime.fromisoformat(betfair_event["startTime"].replace("Z", "+00:00"))
+                    except:
+                        pass
+                
+                live_time = None
+                if "kickoff" in live_match or "start_time" in live_match:
+                    try:
+                        time_str = live_match.get("kickoff") or live_match.get("start_time")
+                        live_time = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+                    except:
+                        pass
+                
+                time_match = self.match_time(betfair_time, live_time)
+                if time_match:
+                    best_time_match = True
+                    
+            except Exception as e:
+                logger.debug(f"Error analyzing rejection for live match: {str(e)}")
+                continue
+        
+        # Build rejection reason
+        reasons = []
+        if best_team_match_score < 0.7:
+            reasons.append(f"Team names don't match (best similarity: {best_team_match_score:.2f}, required: 0.70)")
+        if betfair_competition_name and not best_competition_match:
+            reasons.append(f"Competition mismatch (Betfair: '{betfair_competition_name}' not found in Live API)")
+        if not best_time_match and betfair_event.get("startTime"):
+            reasons.append("Kick-off time mismatch")
+        
+        if not reasons:
+            return "No matching Live API match found (insufficient match score < 0.6)"
+        
+        return "; ".join(reasons)
     
     def clear_cache(self):
         """Clear the match cache"""

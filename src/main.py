@@ -60,8 +60,8 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
         is_refresh: Whether this is a refresh matching
         matching_refresh_interval: Matching refresh interval in seconds
     
-    Returns:
-        Tuple of (matched_count, total_events, new_tracked_matches, skipped_matches_list)
+        Returns:
+        Tuple of (matched_count, total_events, new_tracked_matches, skipped_matches_list, unmatched_events)
     """
     from logic.bet_executor import execute_lay_bet
     from logic.match_tracker import MatchState
@@ -70,6 +70,7 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
     total_events = len(unique_events)
     new_tracked_matches = []  # Collect newly matched matches for batch logging
     skipped_matches_list = []  # Collect skipped matches for console display
+    unmatched_events = []  # Collect unmatched events with rejection reasons
     
     # Log refresh message if this is a refresh
     if is_refresh:
@@ -334,6 +335,8 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
                             targets_list = set()
                             if excel_path:
                                 from logic.qualification import get_competition_targets
+                                # Note: tracker doesn't store competition_id, so we can't use ID matching here
+                                # But we can try to get it from the event if available
                                 targets_list = get_competition_targets(tracker.competition_name, str(excel_path))
                             
                             # Prepare skipped match data
@@ -406,7 +409,10 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
                     target_scores = []
                     if excel_path.exists():
                         from logic.qualification import get_competition_targets
-                        targets = get_competition_targets(tracker_competition_name, str(excel_path))
+                        # Get competition ID from event_data for ID-based matching
+                        comp_id = event_data["competition"].get("id", "")
+                        comp_id_str = str(comp_id) if comp_id else None
+                        targets = get_competition_targets(tracker_competition_name, str(excel_path), competition_id=comp_id_str)
                         if targets:
                             target_scores = sorted(list(targets))
                     
@@ -466,11 +472,26 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
                     "excel_path": str(excel_path) if excel_path.exists() else None
                 })
             else:
-                # Only log mismatch if there are live matches available (to reduce noise)
+                # Analyze rejection reason
+                rejection_reason = "Unknown reason"
+                if match_matcher and live_matches:
+                    rejection_reason = match_matcher.analyze_rejection_reason(
+                        betfair_event, live_matches, competition_name
+                    )
+                elif not live_matches:
+                    rejection_reason = "No Live API matches available"
+                
+                unmatched_events.append({
+                    "event_name": betfair_event_name,
+                    "competition": competition_name,
+                    "reason": rejection_reason
+                })
+                
+                # Log mismatch with reason
                 if live_matches:
-                    logger.debug(f"No match found for: {betfair_event_name}")
+                    logger.debug(f"No match found for: {betfair_event_name} - Reason: {rejection_reason}")
     
-    return matched_count, total_events, new_tracked_matches, skipped_matches_list
+    return matched_count, total_events, new_tracked_matches, skipped_matches_list, unmatched_events
 
 
 def main():
@@ -645,7 +666,49 @@ def main():
                     logger.debug(f"After filtering: {len(markets)} match-specific market(s)")
                 
                 if markets:
-                    # Get unique events from markets
+                    # Verify actual live status using MarketBook (more accurate than MarketCatalogue)
+                    logger.debug("Verifying actual live status using MarketBook...")
+                    market_ids = [m.get("marketId") for m in markets if m.get("marketId")]
+                    
+                    verified_live_markets = {}
+                    if market_ids:
+                        try:
+                            # Get MarketBook for verification (limit to first 50 to avoid too much data)
+                            market_ids_to_verify = market_ids[:50]
+                            market_books = market_service.list_market_book(
+                                market_ids_to_verify,
+                                price_projection={"priceData": []}  # No price data needed, just status
+                            )
+                            
+                            # Create a map of market_id -> verified status
+                            for book in market_books:
+                                market_id = book.get("marketId")
+                                market_def = book.get("marketDefinition", {})
+                                actual_status = market_def.get("status", "")
+                                actual_in_play = market_def.get("inPlay", False)
+                                
+                                # Only consider markets that are OPEN and inPlay (actually live)
+                                if actual_status == "OPEN" and actual_in_play:
+                                    verified_live_markets[market_id] = {
+                                        "status": actual_status,
+                                        "inPlay": actual_in_play
+                                    }
+                            
+                            logger.debug(f"Verified {len(verified_live_markets)} markets are actually LIVE (OPEN + inPlay)")
+                            
+                            # Filter markets to only keep verified live ones
+                            if verified_live_markets:
+                                markets = [m for m in markets if m.get("marketId") in verified_live_markets]
+                                logger.debug(f"After verification: {len(markets)} verified live market(s)")
+                            else:
+                                markets = []
+                                logger.debug("No verified live markets found")
+                        except Exception as e:
+                            logger.warning(f"Error verifying with MarketBook: {str(e)}, using MarketCatalogue data")
+                            # Fallback: use MarketCatalogue data but log warning
+                            logger.warning("⚠ Using MarketCatalogue data (not verified with MarketBook)")
+                    
+                    # Get unique events from verified live markets
                     unique_events: Dict[str, Dict[str, Any]] = {}
                     for market in markets:
                         event = market.get("event", {})
@@ -780,7 +843,46 @@ def main():
                                 if markets:
                                     markets = filter_match_specific_markets(markets)
                                 
-                                # Rebuild unique_events from fresh markets
+                                # Verify actual live status using MarketBook
+                                if markets:
+                                    logger.debug("Verifying actual live status using MarketBook (refresh)...")
+                                    market_ids = [m.get("marketId") for m in markets if m.get("marketId")]
+                                    
+                                    verified_live_markets = {}
+                                    if market_ids:
+                                        try:
+                                            # Get MarketBook for verification (limit to first 50)
+                                            market_ids_to_verify = market_ids[:50]
+                                            market_books = market_service.list_market_book(
+                                                market_ids_to_verify,
+                                                price_projection={"priceData": []}
+                                            )
+                                            
+                                            # Create a map of market_id -> verified status
+                                            for book in market_books:
+                                                market_id = book.get("marketId")
+                                                market_def = book.get("marketDefinition", {})
+                                                actual_status = market_def.get("status", "")
+                                                actual_in_play = market_def.get("inPlay", False)
+                                                
+                                                # Only consider markets that are OPEN and inPlay (actually live)
+                                                if actual_status == "OPEN" and actual_in_play:
+                                                    verified_live_markets[market_id] = {
+                                                        "status": actual_status,
+                                                        "inPlay": actual_in_play
+                                                    }
+                                            
+                                            logger.debug(f"Verified {len(verified_live_markets)} markets are actually LIVE (refresh)")
+                                            
+                                            # Filter markets to only keep verified live ones
+                                            if verified_live_markets:
+                                                markets = [m for m in markets if m.get("marketId") in verified_live_markets]
+                                            else:
+                                                markets = []
+                                        except Exception as e:
+                                            logger.warning(f"Error verifying with MarketBook (refresh): {str(e)}")
+                                
+                                # Rebuild unique_events from verified live markets
                                 unique_events: Dict[str, Dict[str, Any]] = {}
                                 for market in markets:
                                     event = market.get("event", {})
@@ -826,7 +928,7 @@ def main():
                                 should_refresh_matching = False
                         
                         # Perform matching (using function)
-                        matched_count, total_events, new_tracked_matches, skipped_matches_list = perform_matching(
+                        matched_count, total_events, new_tracked_matches, skipped_matches_list, unmatched_events = perform_matching(
                             unique_events=unique_events,
                             live_matches=live_matches,
                             live_score_client=live_score_client,
@@ -906,18 +1008,36 @@ def main():
                                     boxed_message = format_boxed_message(message)
                                     logger.info(message)
                                     print(boxed_message)
+                                
+                                # Log unmatched events with reasons
+                                if unmatched_events:
+                                    logger.info(f"❌ {len(unmatched_events)} event(s) not matched:")
+                                    for unmatched in unmatched_events:
+                                        logger.info(f"  - {unmatched['event_name']} ({unmatched['competition']}): {unmatched['reason']}")
                             elif live_matches:
                                 if should_refresh_matching:
                                     existing_count = len(match_tracker_manager.get_all_trackers())
                                     logger.info(f"No new matches detected during refresh (all matches already being tracked) - {existing_count} match(es) currently tracking")
                                 else:
                                     logger.info(f"Matched: 0/{total_events} Betfair event(s) matched (checking {len(live_matches)} Live API match(es))")
+                                
+                                # Log unmatched events with reasons
+                                if unmatched_events:
+                                    logger.info(f"❌ {len(unmatched_events)} event(s) not matched:")
+                                    for unmatched in unmatched_events:
+                                        logger.info(f"  - {unmatched['event_name']} ({unmatched['competition']}): {unmatched['reason']}")
                             else:
                                 if should_refresh_matching:
                                     existing_count = len(match_tracker_manager.get_all_trackers())
                                     logger.info(f"No new matches detected during refresh (no Live API matches available) - {total_events} Betfair event(s) available, {existing_count} match(es) currently tracking")
                                 else:
                                     logger.info(f"Matched: {total_events} Betfair event(s) found, but no Live API matches available")
+                                
+                                # Log unmatched events with reasons
+                                if unmatched_events:
+                                    logger.info(f"❌ {len(unmatched_events)} event(s) not matched:")
+                                    for unmatched in unmatched_events:
+                                        logger.info(f"  - {unmatched['event_name']} ({unmatched['competition']}): {unmatched['reason']}")
                             
                             main._last_matched_summary = current_summary
                         

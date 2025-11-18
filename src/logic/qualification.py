@@ -12,8 +12,9 @@ from config.competition_mapper import normalize_text
 
 logger = logging.getLogger("BetfairBot")
 
-# Cache for competition maps (competition_name -> {targets, min_odds, stake})
+# Cache for competition maps (competition_name -> {targets, min_odds, stake, competition_id})
 _competition_map_cache: Dict[str, Dict[str, Any]] = {}
+_competition_id_map_cache: Dict[str, str] = {}  # {competition_id: competition_name}
 _excel_path_cache: Optional[str] = None
 
 
@@ -237,16 +238,40 @@ def load_competition_map_from_excel(excel_path: str) -> Dict[str, Dict[str, Any]
         min_odds_column = 'Min_Odds' if 'Min_Odds' in df.columns else ('Min Odds' if 'Min Odds' in df.columns else None)
         has_stake = 'Stake' in df.columns
         
-        competition_map = {}
+        competition_map = {}  # {competition_name: {targets, min_odds, stake, competition_id}}
+        competition_id_map = {}  # {competition_id: competition_name} for ID-based matching
+        
+        # Check if Competition-Betfair column exists (for ID matching)
+        has_competition_betfair = 'Competition-Betfair' in df.columns
         
         # Process each row
         for idx, row in df.iterrows():
             # Get competition name (priority: Competition-Live, then Competition)
             competition_name = None
+            competition_id_from_excel = None
+            
             if has_competition_live and pd.notna(row.get('Competition-Live')):
                 competition_name = str(row['Competition-Live']).strip()
             elif has_competition_old and pd.notna(row.get('Competition')):
                 competition_name = str(row['Competition']).strip()
+            
+            # Get Competition-Betfair for ID matching
+            if has_competition_betfair and pd.notna(row.get('Competition-Betfair')):
+                betfair_comp = str(row['Competition-Betfair']).strip()
+                # Extract ID if format is "ID_Name"
+                if "_" in betfair_comp:
+                    try:
+                        parts = betfair_comp.split("_", 1)
+                        competition_id_from_excel = parts[0].strip()
+                        # Use Competition-Betfair name if Competition-Live/Competition not available
+                        if not competition_name:
+                            competition_name = betfair_comp
+                    except:
+                        if not competition_name:
+                            competition_name = betfair_comp
+                else:
+                    if not competition_name:
+                        competition_name = betfair_comp
             
             if not competition_name:
                 continue
@@ -280,16 +305,22 @@ def load_competition_map_from_excel(excel_path: str) -> Dict[str, Dict[str, Any]
                 competition_map[competition_name] = {
                     "targets": set(),
                     "min_odds": min_odds,
-                    "stake": stake
+                    "stake": stake,
+                    "competition_id": competition_id_from_excel
                 }
             
             competition_map[competition_name]["targets"].add(result)
+            
+            # Also create ID mapping if we have ID
+            if competition_id_from_excel:
+                competition_id_map[competition_id_from_excel] = competition_name
         
-        # Cache the result
+        # Cache the result (include ID map in cache)
         _competition_map_cache = competition_map
+        _competition_id_map_cache = competition_id_map
         _excel_path_cache = excel_path
         
-        logger.info(f"Loaded competition map from Excel: {len(competition_map)} competition(s)")
+        logger.info(f"Loaded competition map from Excel: {len(competition_map)} competition(s), {len(competition_id_map)} with ID mapping")
         return competition_map
         
     except FileNotFoundError:
@@ -300,14 +331,16 @@ def load_competition_map_from_excel(excel_path: str) -> Dict[str, Dict[str, Any]
         return {}
 
 
-def get_competition_targets(competition_name: str, excel_path: str) -> Set[str]:
+def get_competition_targets(competition_name: str, excel_path: str, competition_id: Optional[str] = None) -> Set[str]:
     """
     Get target scores for a competition from cached map
     Supports both "ID_Name" format and "Name" format
+    Also supports matching by competition ID if provided
     
     Args:
         competition_name: Competition name (e.g., "79_Segunda Division" or "Segunda Division")
         excel_path: Path to Excel file
+        competition_id: Optional competition ID from Betfair (for ID-based matching)
     
     Returns:
         Set of normalized target scores
@@ -318,16 +351,44 @@ def get_competition_targets(competition_name: str, excel_path: str) -> Set[str]:
     if not competition_map:
         return set()
     
+    # Try matching by ID first (most accurate)
+    if competition_id:
+        # Check if ID is in cached ID map
+        global _competition_id_map_cache
+        if competition_id in _competition_id_map_cache:
+            excel_comp_name = _competition_id_map_cache[competition_id]
+            if excel_comp_name in competition_map:
+                logger.debug(f"Matched competition by ID: {competition_id} -> {excel_comp_name}")
+                return competition_map[excel_comp_name]["targets"]
+        
+        # Also try matching ID in competition_map directly
+        for excel_comp_name, comp_data in competition_map.items():
+            excel_comp_id = comp_data.get("competition_id")
+            if excel_comp_id and str(excel_comp_id) == str(competition_id):
+                logger.debug(f"Matched competition by ID in map: {competition_id} -> {excel_comp_name}")
+                return comp_data["targets"]
+            
+            # Try matching "ID_Name" format
+            if "_" in excel_comp_name:
+                try:
+                    excel_parts = excel_comp_name.split("_", 1)
+                    excel_id = excel_parts[0].strip()
+                    if str(excel_id) == str(competition_id):
+                        logger.debug(f"Matched competition by ID in name format: {competition_id} -> {excel_comp_name}")
+                        return comp_data["targets"]
+                except:
+                    pass
+    
     # Normalize competition name for matching
     normalized_competition = normalize_text(competition_name)
     
     # Extract ID and name if format is "ID_Name"
-    competition_id = None
+    competition_id_from_name = None
     competition_name_only = competition_name
     if "_" in competition_name:
         parts = competition_name.split("_", 1)
         try:
-            competition_id = parts[0].strip()
+            competition_id_from_name = parts[0].strip()
             competition_name_only = parts[1].strip()
         except:
             pass
@@ -342,8 +403,8 @@ def get_competition_targets(competition_name: str, excel_path: str) -> Set[str]:
             return comp_data["targets"]
         
         # If competition_name is "ID_Name" format, try matching just the name part
-        if competition_id and competition_name_only:
-            if excel_comp_name == f"{competition_id}_{competition_name_only}":
+        if competition_id_from_name and competition_name_only:
+            if excel_comp_name == f"{competition_id_from_name}_{competition_name_only}":
                 return comp_data["targets"]
             if normalize_text(excel_comp_name) == normalize_text(competition_name_only):
                 return comp_data["targets"]
@@ -358,7 +419,7 @@ def get_competition_targets(competition_name: str, excel_path: str) -> Set[str]:
                 except:
                     pass
     
-    logger.debug(f"No competition match found for: {competition_name}")
+    logger.debug(f"No competition match found for: {competition_name} (ID: {competition_id})")
     return set()
 
 
