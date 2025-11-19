@@ -287,7 +287,9 @@ def test_login_detailed(config_data: dict):
             session_token = authenticator.get_session_token()
             if session_token:
                 masked_token = f"{session_token[:8]}...{session_token[-8:]}" if len(session_token) > 16 else "***"
-                print(f"  → Session token: {masked_token}")
+                print(f"  → Session token (masked): {masked_token}")
+                print(f"  → Session token (FULL): {session_token}")
+                print(f"  → App Key: {config_data['app_key']}")
             return True
         else:
             print_check("Login failed", False, error or "Unknown error")

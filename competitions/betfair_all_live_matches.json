@@ -1,0 +1,42 @@
+{
+  "timestamp": "2025-11-18T17:41:57.430574",
+  "total_verified_live_matches": 5,
+  "total_markets_verified": 0,
+  "matches": [
+    {
+      "event_id": "34939842",
+      "event_name": "Dungannon v Linfield",
+      "competition_id": "12199359",
+      "competition_name": "Northern Irish Premiership",
+      "market_count": 15
+    },
+    {
+      "event_id": "34949504",
+      "event_name": "Casertana v Atalanta B",
+      "competition_id": "12199513",
+      "competition_name": "Italian Serie C",
+      "market_count": 15
+    },
+    {
+      "event_id": "34969729",
+      "event_name": "Azerbaijan U19 v Malta U19",
+      "competition_id": "12219947",
+      "competition_name": "UEFA U19 Euro Qualifiers",
+      "market_count": 13
+    },
+    {
+      "event_id": "34969733",
+      "event_name": "Scotland U19 v England U19",
+      "competition_id": "12219947",
+      "competition_name": "UEFA U19 Euro Qualifiers",
+      "market_count": 13
+    },
+    {
+      "event_id": "34969862",
+      "event_name": "Northern Ireland U19 v Czech Rep U19",
+      "competition_id": "12219947",
+      "competition_name": "UEFA U19 Euro Qualifiers",
+      "market_count": 10
+    }
+  ]
+}
