@@ -33,7 +33,9 @@ def initialize_all_services(config: dict, session_token: str, service_factory: A
     from tracking.skipped_matches_writer import SkippedMatchesWriter
     from football_api.matcher import MatchMatcher
     from logic.match_tracker import MatchTrackerManager
-    from config.competition_mapper import get_competition_ids_from_excel, get_competitions_with_zero_zero_exception
+    from config.competition_mapper import (get_competition_ids_from_excel, 
+                                          get_competitions_with_zero_zero_exception,
+                                          get_live_api_competition_ids_from_excel)
     from auth.keep_alive import KeepAliveManager
     
     services = {}
@@ -127,8 +129,12 @@ def initialize_all_services(config: dict, session_token: str, service_factory: A
         excel_path = project_root / "competitions" / "Competitions_Results_Odds_Stake.xlsx"
         if excel_path.exists():
             services['zero_zero_exception_competitions'] = get_competitions_with_zero_zero_exception(str(excel_path))
+            # Load Live API competition IDs for filtering
+            live_api_competition_ids = get_live_api_competition_ids_from_excel(str(excel_path))
+            services['live_api_competition_ids'] = live_api_competition_ids
         else:
             services['zero_zero_exception_competitions'] = set()
+            services['live_api_competition_ids'] = []
     
     # Initialize Bet Tracking
     bet_tracking_config = config.get("bet_tracking", {})

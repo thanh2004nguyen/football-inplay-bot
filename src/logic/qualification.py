@@ -523,6 +523,66 @@ def get_possible_scores_after_multiple_goals(current_score: str, max_goals: int 
         return set()
 
 
+def is_impossible_match_at_60(score: str, competition_name: str, excel_path: str) -> Tuple[bool, str]:
+    """
+    Check if match is "impossible" at minute 60 - can never return to target results
+    
+    Strict logic: A match is impossible if:
+    1. Current score already has more goals than allowed by Excel targets, OR
+    2. Current score + 1 goal would push it permanently out of ALL target results
+    
+    This is stricter than is_out_of_target - it checks if even a single goal would
+    make the match permanently invalid for all target results.
+    
+    Args:
+        score: Current score (e.g., "2-1", "0-0")
+        competition_name: Competition name (for Excel lookup)
+        excel_path: Path to Excel file (Competitions_Results_Odds_Stake.xlsx)
+    
+    Returns:
+        (is_impossible, reason)
+    """
+    try:
+        # Parse score
+        parts = score.split("-")
+        if len(parts) != 2:
+            return False, "Invalid score format"
+        
+        home_goals = int(parts[0].strip())
+        away_goals = int(parts[1].strip())
+        
+        # Get Excel targets
+        excel_targets = get_excel_targets_for_competition(competition_name, excel_path)
+        if not excel_targets:
+            return False, "No Excel targets available"
+        
+        # Normalize current score
+        normalized_current = normalize_score(score)
+        
+        # Check 1: Current score already out of targets
+        normalized_targets = {normalize_score(t) for t in excel_targets}
+        if normalized_current not in normalized_targets:
+            return True, f"Score {score} at minute 60 is already out of targets {sorted(excel_targets)}"
+        
+        # Check 2: Current score + 1 goal would push it out of ALL targets
+        # Get all possible scores after exactly 1 goal
+        possible_after_1_goal = get_possible_scores_after_multiple_goals(score, max_goals=1)
+        
+        # Check if ANY score after 1 goal is still in targets
+        matching_after_1_goal = possible_after_1_goal & normalized_targets
+        
+        if not matching_after_1_goal:
+            # Even 1 goal would push it out of ALL targets → impossible
+            return True, f"Score {score} at minute 60: after 1 goal, all possible scores {sorted(possible_after_1_goal)} are out of targets {sorted(excel_targets)}"
+        
+        # Match can still reach targets with 1 goal → not impossible
+        return False, f"Score {score} at minute 60: can still reach targets {sorted(matching_after_1_goal)} with 1 goal"
+        
+    except Exception as e:
+        logger.warning(f"Error checking impossible match: {str(e)}")
+        return False, f"Error: {str(e)}"
+
+
 def is_out_of_target(score: str, current_minute: int, target_over: float,
                     competition_name: Optional[str] = None,
                     excel_path: Optional[str] = None) -> Tuple[bool, str]:
@@ -612,7 +672,8 @@ def is_qualified(score: str,
                 var_check_enabled: bool = True,
                 target_over: Optional[float] = None,
                 early_discard_enabled: bool = True,
-                excel_path: Optional[str] = None) -> Tuple[bool, str]:
+                excel_path: Optional[str] = None,
+                strict_discard_at_60: bool = False) -> Tuple[bool, str]:
     """
     Check if match is qualified for betting
     
@@ -628,10 +689,18 @@ def is_qualified(score: str,
         target_over: Target Over X.5 value (e.g., 2.5)
         early_discard_enabled: Whether to enable early discard at minute 60
         excel_path: Path to Excel file (for early discard check based on Excel targets)
+        strict_discard_at_60: If True, use strict discard logic (impossible matches)
     
     Returns:
         (is_qualified, reason)
     """
+    # Strict discard check at minute 60: remove "impossible" matches
+    if strict_discard_at_60 and current_minute == 60 and excel_path and competition_name:
+        impossible, reason = is_impossible_match_at_60(score, competition_name, excel_path)
+        if impossible:
+            logger.info(f"Match impossible at minute 60: {reason}")
+            return False, f"Impossible match: {reason}"
+    
     # Early discard check: if at minute 60 and out of target, immediately disqualify
     if early_discard_enabled and target_over is not None and current_minute == 60:
         out_of_target, reason = is_out_of_target(score, current_minute, target_over, 

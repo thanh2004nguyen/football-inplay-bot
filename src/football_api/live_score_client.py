@@ -182,20 +182,33 @@ class LiveScoreClient:
             logger.error(f"Unexpected error in Live Score API request: {str(e)}", exc_info=True)
             return None
     
-    def get_live_matches(self) -> List[Dict[str, Any]]:
+    def get_live_matches(self, competition_ids: List[str] = None) -> List[Dict[str, Any]]:
         """
         Get list of currently live matches (filtered to only include actually live matches)
         
+        Args:
+            competition_ids: Optional list of Live API competition IDs to filter (e.g., ["4", "77"])
+                            If provided, only matches from these competitions will be returned
+        
         Returns:
-            List of match dictionaries (only matches that are actually live)
+            List of match dictionaries (only matches that are actually live and in specified competitions)
         """
         logger.debug("Fetching live matches from Live Score API")
         
         # According to documentation: https://livescore-api.com/api-client/matches/live.json?key=...&secret=...
+        # Parameter: competition_id (string) - Filters by competition IDs separated by comma
         params = {
             "key": self.api_key,
             "secret": self.api_secret
         }
+        
+        # Add competition filter if provided
+        if competition_ids:
+            # Join competition IDs with comma as per API documentation
+            competition_id_str = ",".join(str(cid) for cid in competition_ids)
+            params["competition_id"] = competition_id_str
+            logger.debug(f"Filtering Live API matches by competition IDs: {competition_id_str}")
+        
         result = self._make_request("/matches/live.json", params=params)
         
         if result and isinstance(result, dict):
@@ -208,10 +221,30 @@ class LiveScoreClient:
                     return []
                 
                 # Filter out matches that are not actually live
-                from football_api.parser import parse_match_minute
+                from football_api.parser import parse_match_minute, parse_match_competition
                 live_matches = []
                 
+                # If competition_ids provided but API didn't filter (fallback), we'll filter by competition ID here
+                # Extract competition IDs from matches for additional filtering
+                allowed_competition_ids = set(competition_ids) if competition_ids else None
+                
                 for match in matches:
+                    # Additional filter by competition ID if API didn't filter properly
+                    if allowed_competition_ids:
+                        # Extract competition ID from match
+                        comp_str = parse_match_competition(match)
+                        match_comp_id = None
+                        if comp_str and "_" in comp_str:
+                            try:
+                                match_comp_id = comp_str.split("_", 1)[0].strip()
+                            except:
+                                pass
+                        
+                        # If match has competition ID and it's not in allowed list, skip
+                        if match_comp_id and match_comp_id not in allowed_competition_ids:
+                            logger.debug(f"Skipping match (competition not in filter): {match.get('home', {}).get('name', 'N/A')} v {match.get('away', {}).get('name', 'N/A')} - Competition ID: {match_comp_id}")
+                            continue
+                    
                     # Check status
                     status = str(match.get("status", "")).upper()
                     

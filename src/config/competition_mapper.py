@@ -609,6 +609,64 @@ def get_competition_ids_from_excel(excel_path: str,
         return []
 
 
+def get_live_api_competition_ids_from_excel(excel_path: str) -> List[str]:
+    """
+    Get Live API competition IDs from Excel file (from Competition-Live column)
+    
+    Extracts competition IDs from format "ID_Name" (e.g., "4_Serie A") or just uses name
+    if format is just "Name"
+    
+    Args:
+        excel_path: Path to Excel file
+    
+    Returns:
+        List of Live API competition IDs (as strings)
+    """
+    try:
+        df = pd.read_excel(excel_path)
+        
+        competition_ids = []
+        
+        # Priority: Use Competition-Live column if available
+        if 'Competition-Live' in df.columns:
+            competitions = df['Competition-Live'].dropna().unique().tolist()
+            
+            for comp in competitions:
+                comp_str = str(comp).strip()
+                if not comp_str:
+                    continue
+                
+                # Extract ID from format "ID_Name" (e.g., "4_Serie A")
+                if "_" in comp_str:
+                    try:
+                        parts = comp_str.split("_", 1)
+                        comp_id = parts[0].strip()
+                        # Validate that first part is a number (ID)
+                        if comp_id.isdigit():
+                            competition_ids.append(comp_id)
+                        else:
+                            # Not a valid ID format, skip
+                            logger.debug(f"Skipping competition '{comp_str}' - ID part '{comp_id}' is not numeric")
+                    except Exception as e:
+                        logger.debug(f"Error parsing competition '{comp_str}': {str(e)}")
+                else:
+                    # Format is just "Name" without ID - cannot filter by ID
+                    # We'll need to filter by name after getting matches
+                    logger.debug(f"Competition '{comp_str}' has no ID, will filter by name")
+        
+        # Remove duplicates and return
+        unique_ids = list(set(competition_ids))
+        # Log removed per user request
+        if not unique_ids:
+            logger.info("No Live API competition IDs found in Excel (Competition-Live column may not have ID format)")
+        
+        return unique_ids
+        
+    except Exception as e:
+        logger.error(f"Error getting Live API competition IDs from Excel: {str(e)}")
+        return []
+
+
 def get_competitions_with_zero_zero_exception(excel_path: str) -> Set[str]:
     """
     Read Excel to identify competitions with 0-0 exception

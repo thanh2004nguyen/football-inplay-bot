@@ -29,7 +29,8 @@ class MatchTracker:
                  zero_zero_exception_competitions: set = None,
                  var_check_enabled: bool = True,
                  target_over: float = None,
-                 early_discard_enabled: bool = True):
+                 early_discard_enabled: bool = True,
+                 strict_discard_at_60: bool = False):
         """
         Initialize match tracker
         
@@ -53,6 +54,7 @@ class MatchTracker:
         self.var_check_enabled = var_check_enabled
         self.target_over = target_over
         self.early_discard_enabled = early_discard_enabled
+        self.strict_discard_at_60 = strict_discard_at_60
         
         # Match data
         self.current_score = "0-0"
@@ -156,6 +158,9 @@ class MatchTracker:
         elif self.state == MatchState.MONITORING_60_74:
             # Check qualification
             if not self.qualified:
+                # Get strict_discard_at_60 from config (passed via update_state)
+                strict_discard = getattr(self, 'strict_discard_at_60', False)
+                
                 qualified, reason = is_qualified(
                     score=self.current_score,
                     goals=self.goals,
@@ -167,7 +172,8 @@ class MatchTracker:
                     var_check_enabled=self.var_check_enabled,
                     target_over=self.target_over,
                     early_discard_enabled=self.early_discard_enabled,
-                    excel_path=excel_path
+                    excel_path=excel_path,
+                    strict_discard_at_60=strict_discard
                 )
                 
                 # If out of target at minute 60, immediately disqualify

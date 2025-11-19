@@ -424,6 +424,9 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
                     print(f"  {skip_message}")
                     continue
                 
+                # Get strict_discard_at_60 from config
+                strict_discard_at_60 = match_tracking_config.get("strict_discard_at_60", False)
+                
                 # Create tracker (only if minute <= 74)
                 tracker = MatchTracker(
                     betfair_event_id=event_id,
@@ -435,7 +438,8 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
                     zero_zero_exception_competitions=zero_zero_exception_competitions,
                     var_check_enabled=var_check_enabled,
                     target_over=target_over,
-                    early_discard_enabled=early_discard_enabled
+                    early_discard_enabled=early_discard_enabled,
+                    strict_discard_at_60=strict_discard_at_60
                 )
                 
                 # Get goals from events endpoint if match is in monitoring window
@@ -583,6 +587,7 @@ def main():
         match_matcher = services.get('match_matcher')
         match_tracker_manager = services.get('match_tracker_manager')
         zero_zero_exception_competitions = services.get('zero_zero_exception_competitions', set())
+        live_api_competition_ids = services.get('live_api_competition_ids', [])
         bet_tracker = services.get('bet_tracker')
         excel_writer = services.get('excel_writer')
         skipped_matches_writer = services['skipped_matches_writer']
@@ -632,9 +637,20 @@ def main():
         last_live_api_call_time = None  # None means never called before
         cached_live_matches = []  # Cache live matches between API calls
         
+        # Dynamic polling config for Livescore API
+        dynamic_polling_enabled = live_score_config.get("dynamic_polling_enabled", False) if live_score_config else False
+        default_polling_interval = live_score_config.get("default_polling_interval_seconds", 60) if live_score_config else 60
+        intensive_polling_interval = live_score_config.get("intensive_polling_interval_seconds", 10) if live_score_config else 10
+        
         # Matching refresh timer (read from config)
-        monitoring_config = config.get("monitoring", {})
         matching_refresh_interval = monitoring_config.get("matching_refresh_interval_seconds", 60 * 60)  # Default: 60 minutes
+        
+        # Fast polling config for Betfair API
+        fast_polling_enabled = monitoring_config.get("fast_polling_enabled", True)
+        fast_polling_interval = monitoring_config.get("fast_polling_interval_seconds", 1)
+        fast_polling_window = monitoring_config.get("fast_polling_window", {"start_minute": 74, "end_minute": 76})
+        fast_polling_start = fast_polling_window.get("start_minute", 74)
+        fast_polling_end = fast_polling_window.get("end_minute", 76)
         last_matching_refresh_time = None  # None means never refreshed before
         
         while True:
@@ -738,8 +754,27 @@ def main():
                     
                     # Milestone 2: Match with Live API and start tracking
                     if live_score_client and match_matcher and match_tracker_manager:
-                        # Get live matches from Live Score API (only every N seconds to respect rate limit)
+                        # Dynamic polling: Adjust interval based on matches in 60'-76' window
                         current_time = time.time()
+                        current_live_api_polling_interval = live_api_polling_interval
+                        
+                        if dynamic_polling_enabled:
+                            # Check if there are valid matches in 60'-76' window
+                            all_trackers = match_tracker_manager.get_all_trackers()
+                            from logic.match_tracker import MatchState
+                            valid_matches_in_window = [
+                                t for t in all_trackers
+                                if 60 <= t.current_minute <= 76
+                                and t.state != MatchState.DISQUALIFIED
+                                and t.state != MatchState.FINISHED
+                            ]
+                            
+                            if valid_matches_in_window:
+                                # Intensive mode: switch to faster polling
+                                current_live_api_polling_interval = intensive_polling_interval
+                            else:
+                                # Default mode: use slower polling
+                                current_live_api_polling_interval = default_polling_interval
                         
                         # Check if we need to call API (first call or enough time has passed)
                         should_call_api = False
@@ -748,7 +783,7 @@ def main():
                             should_call_api = True
                         else:
                             time_since_last_call = current_time - last_live_api_call_time
-                            if time_since_last_call >= live_api_polling_interval:
+                            if time_since_last_call >= current_live_api_polling_interval:
                                 should_call_api = True
                             else:
                                 # Use cached matches (don't log to reduce noise)
@@ -757,7 +792,8 @@ def main():
                         if should_call_api:
                             # Time to call Live API
                             try:
-                                live_matches = live_score_client.get_live_matches()
+                                # Pass Live API competition IDs to filter matches
+                                live_matches = live_score_client.get_live_matches(competition_ids=live_api_competition_ids if live_api_competition_ids else None)
                                 last_live_api_call_time = current_time
                                 # Only cache if we got valid data (list)
                                 if isinstance(live_matches, list):
@@ -896,8 +932,8 @@ def main():
                                     if event_id:
                                         unique_events[event_id]["markets"].append(market)
                                 
-                                # Get fresh LiveScore matches
-                                live_matches = live_score_client.get_live_matches()
+                                # Get fresh LiveScore matches (with competition filter)
+                                live_matches = live_score_client.get_live_matches(competition_ids=live_api_competition_ids if live_api_competition_ids else None)
                                 if isinstance(live_matches, list):
                                     cached_live_matches = live_matches
                                 last_live_api_call_time = current_time
@@ -1111,12 +1147,35 @@ def main():
                 # Reset error counter on success
                 consecutive_errors = 0
                 
+                # Determine Betfair polling interval (fast polling for matches in 74'-76')
+                current_betfair_polling_interval = polling_interval
+                if fast_polling_enabled and match_tracker_manager:
+                    all_trackers = match_tracker_manager.get_all_trackers()
+                    from logic.match_tracker import MatchState
+                    # Check if there are matches in fast polling window that are candidates
+                    candidates_in_fast_window = [
+                        t for t in all_trackers
+                        if fast_polling_start <= t.current_minute < fast_polling_end
+                        and (t.state == MatchState.READY_FOR_BET or 
+                             (t.state == MatchState.QUALIFIED and t.current_minute >= 74))
+                        and not t.bet_placed
+                        and not getattr(t, 'bet_skipped', False)
+                    ]
+                    
+                    if candidates_in_fast_window:
+                        # Fast polling mode: use 1s interval
+                        current_betfair_polling_interval = fast_polling_interval
+                        logger.debug(f"Fast polling active: {len(candidates_in_fast_window)} candidate(s) in {fast_polling_start}'-{fast_polling_end}' window")
+                    else:
+                        # Normal polling mode
+                        current_betfair_polling_interval = polling_interval
+                
                 # Wait before next iteration (check stop event during sleep)
                 try:
                     # Sleep in small chunks to check stop event more frequently
-                    sleep_chunks = max(1, int(polling_interval / 2))  # Check every 0.5s or 1s
+                    sleep_chunks = max(1, int(current_betfair_polling_interval / 2))  # Check every 0.5s or 1s
                     for _ in range(sleep_chunks):
-                        time.sleep(polling_interval / sleep_chunks)
+                        time.sleep(current_betfair_polling_interval / sleep_chunks)
                         # Check stop event during sleep
                         try:
                             from web.shared_state import should_stop
