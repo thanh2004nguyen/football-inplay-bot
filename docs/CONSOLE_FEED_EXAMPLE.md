@@ -45,7 +45,7 @@ Monitoring phase started – tracking live matches...
 
 #### 2.2. Live API Matches (Every 60 seconds, or 10s in intensive mode)
 ```
-Live API: 4 live match(es) available  # Đã filter theo competitions trong Excel
+Live API: 4 live match(es) available  # Already filtered by competitions in Excel
   [1] Gremio v Vasco da Gama (Brazilian Serie A) - 2-1 @ 67' [LIVE]
   [2] SE Palmeiras v EC Vitoria Salvador (Brazilian Serie A) - 0-0 @ 38' [LIVE]
   [3] Botafogo FR v Sport Recife (Brazilian Serie A) - 1-0 @ 52' [LIVE]
@@ -53,9 +53,9 @@ Live API: 4 live match(es) available  # Đã filter theo competitions trong Exce
 ```
 
 **Note:**
-- Live API matches đã được filter theo competition IDs từ Excel (cột `Competition-Live`)
-- Chỉ hiển thị matches từ competitions có trong Excel file
-- Polling interval tự động chuyển 60s ↔ 10s dựa trên số matches trong 60'-76' (nếu `dynamic_polling_enabled = true`)
+- Live API matches are filtered by competition IDs from Excel (column `Competition-Live`)
+- Only shows matches from competitions in Excel file
+- Polling interval automatically switches 60s ↔ 10s based on number of matches in 60'-76' (if `dynamic_polling_enabled = true`)
 
 #### 2.3. New Matches Started Tracking
 ```
@@ -382,39 +382,39 @@ Matched: 0 Betfair event(s) found, but no Live API matches available
 ## Issues Fixed (Latest Updates):
 
 ### Issue 7: Dynamic Polling & Fast Polling Implementation ✅
-**Problem:** Khách hàng yêu cầu:
-1. Livescore API - dynamic polling (60s ↔ 10s) dựa trên matches trong 60'-76'
-2. Betfair API - fast polling (1s) cho matches ở 74'-76' sẵn sàng đặt bet
-3. Strict discard ở phút 60' - loại bỏ matches không thể quay lại target results
+**Problem:** Customer requested:
+1. Livescore API - dynamic polling (60s ↔ 10s) based on matches in 60'-76'
+2. Betfair API - fast polling (1s) for matches at 74'-76' ready to place bet
+3. Strict discard at minute 60' - remove matches that cannot return to target results
 
 **Solution:**
 - **Livescore API Dynamic Polling:**
-  - Default mode: 60s khi không có matches trong 60'-76'
-  - Intensive mode: 10s khi có ít nhất 1 match trong 60'-76' và không bị discard
-  - Tự động quay về 60s khi không còn matches hợp lệ
-  - Implement nhưng disable mặc định (có thể bật qua config `dynamic_polling_enabled`)
+  - Default mode: 60s when there are no matches in 60'-76'
+  - Intensive mode: 10s when there is at least 1 match in 60'-76' and not discarded
+  - Automatically returns to 60s when there are no more valid matches
+  - Implemented but disabled by default (can be enabled via config `dynamic_polling_enabled`)
   
 - **Betfair API Fast Polling:**
-  - Normal mode: polling interval bình thường (10s)
-  - Fast mode: 1s cho matches ở 74'-76' là candidates (READY_FOR_BET hoặc QUALIFIED)
-  - Tự động quay về normal khi bet đã placed hoặc match không còn hợp lệ
+  - Normal mode: normal polling interval (10s)
+  - Fast mode: 1s for matches at 74'-76' that are candidates (READY_FOR_BET or QUALIFIED)
+  - Automatically returns to normal when bet is placed or match is no longer valid
   
 - **Strict Discard at 60':**
-  - Loại bỏ matches không thể quay lại target results
-  - Check: match đã có score ngoài targets HOẶC chỉ cần 1 goal nữa là vĩnh viễn ra khỏi tất cả targets
-  - Chỉ giữ matches có thể đạt target với ít nhất 1 goal nữa
+  - Remove matches that cannot return to target results
+  - Check: match already has score outside targets OR only needs 1 more goal to permanently leave all targets
+  - Only keep matches that can reach target with at least 1 more goal
 
 **Files Modified:**
-- `config/config.json`: Thêm config flags cho dynamic polling và fast polling
-- `src/main.py`: Implement dynamic polling logic cho Livescore và fast polling cho Betfair
-- `src/logic/qualification.py`: Thêm hàm `is_impossible_match_at_60()` cho strict discard
-- `src/logic/match_tracker.py`: Tích hợp strict discard logic
+- `config/config.json`: Added config flags for dynamic polling and fast polling
+- `src/main.py`: Implemented dynamic polling logic for Livescore and fast polling for Betfair
+- `src/logic/qualification.py`: Added function `is_impossible_match_at_60()` for strict discard
+- `src/logic/match_tracker.py`: Integrated strict discard logic
 
 **Config Options:**
 ```json
 {
   "live_score_api": {
-    "dynamic_polling_enabled": false,  // Bật khi có paid plan
+    "dynamic_polling_enabled": false,  // Enable when paid plan is available
     "default_polling_interval_seconds": 60,
     "intensive_polling_interval_seconds": 10
   },
@@ -432,37 +432,37 @@ Matched: 0 Betfair event(s) found, but no Live API matches available
 ---
 
 ### Issue 8: Live API Competition Filtering ✅
-**Problem:** Live API đang lấy tất cả matches đang live, không filter theo competitions trong Excel như Betfair.
+**Problem:** Live API is fetching all live matches, not filtering by competitions in Excel like Betfair.
 
 **Solution:**
-- **Extract Live API Competition IDs từ Excel:**
-  - Đọc cột `Competition-Live` từ Excel
-  - Extract competition IDs từ format `"ID_Name"` (ví dụ: `"4_Serie A"` → ID là `"4"`)
-  - Lưu vào `live_api_competition_ids` trong services
+- **Extract Live API Competition IDs from Excel:**
+  - Read `Competition-Live` column from Excel
+  - Extract competition IDs from format `"ID_Name"` (e.g., `"4_Serie A"` → ID is `"4"`)
+  - Store in `live_api_competition_ids` in services
   
 - **Filter Live API Matches:**
-  - Thêm parameter `competition_ids` vào `get_live_matches()`
-  - Gửi `competition_id` parameter tới Live API (theo API documentation)
-  - Fallback filter: nếu API không filter đúng, filter lại bằng competition ID trong code
+  - Add parameter `competition_ids` to `get_live_matches()`
+  - Send `competition_id` parameter to Live API (according to API documentation)
+  - Fallback filter: if API doesn't filter correctly, filter again by competition ID in code
   
-- **Tự động load khi khởi động:**
-  - Load Live API competition IDs từ Excel trong `setup_utils.py`
-  - Pass vào `get_live_matches()` mỗi khi gọi API
+- **Automatically load on startup:**
+  - Load Live API competition IDs from Excel in `setup_utils.py`
+  - Pass to `get_live_matches()` every time API is called
 
 **Files Modified:**
-- `src/config/competition_mapper.py`: Thêm hàm `get_live_api_competition_ids_from_excel()`
-- `src/football_api/live_score_client.py`: Thêm parameter `competition_ids` vào `get_live_matches()`
-- `src/utils/setup_utils.py`: Load Live API competition IDs từ Excel
-- `src/main.py`: Pass Live API competition IDs vào `get_live_matches()`
+- `src/config/competition_mapper.py`: Added function `get_live_api_competition_ids_from_excel()`
+- `src/football_api/live_score_client.py`: Added parameter `competition_ids` to `get_live_matches()`
+- `src/utils/setup_utils.py`: Load Live API competition IDs from Excel
+- `src/main.py`: Pass Live API competition IDs to `get_live_matches()`
 
 **Result:**
-- Cả Betfair và Live API đều chỉ lấy matches từ competitions trong Excel
-- Matching chính xác hơn và giảm số lượng matches không cần thiết
-- Log sẽ hiển thị số matches đã được filter theo Excel competitions
+- Both Betfair and Live API only fetch matches from competitions in Excel
+- More accurate matching and reduced number of unnecessary matches
+- Log will display number of matches filtered by Excel competitions
 
 **Example Log:**
 ```
-Live API: 3 live match(es) available  # Đã filter từ 11 matches xuống 3 matches theo Excel
+Live API: 3 live match(es) available  # Filtered from 11 matches down to 3 matches according to Excel
   [1] Inter Milan v AC Milan (4_Serie A) - 1-0 @ 35' [IN PLAY]
   [2] Real Madrid v Barcelona (3_LaLiga Santander) - 0-0 @ 42' [IN PLAY]
   [3] Manchester United v Liverpool (2_Premier League) - 2-1 @ 55' [IN PLAY]
@@ -583,6 +583,6 @@ Matched: 1/4 event(s)
 | 4. [N/A] target list | ✅ Fixed | Added ID-based matching + name matching |
 | 5. Cloudflare warnings | ⚠️ N/A | Bot uses API, not web scraping |
 | 6. Missing rejection reasons | ✅ Fixed | Added detailed logging for unmatched events |
-| 7. Dynamic polling & fast polling | ✅ Fixed | Livescore 60s↔10s, Betfair 1s ở 74'-76', strict discard ở 60' |
-| 8. Live API competition filtering | ✅ Fixed | Filter Live API matches theo Excel competitions |
+| 7. Dynamic polling & fast polling | ✅ Fixed | Livescore 60s↔10s, Betfair 1s at 74'-76', strict discard at 60' |
+| 8. Live API competition filtering | ✅ Fixed | Filter Live API matches by Excel competitions |
 
