@@ -403,6 +403,10 @@ Matched: 0 Betfair event(s) found, but no Live API matches available
   - Remove matches that cannot return to target results
   - Check: match already has score outside targets OR only needs 1 more goal to permanently leave all targets
   - Only keep matches that can reach target with at least 1 more goal
+  - **VAR Delay Logic (Updated):** Instead of discarding immediately, wait 3-5 minutes (configurable) before discarding to account for VAR decisions
+  - If VAR cancels a goal during delay period, match is no longer impossible → discard candidate is cleared
+  - If match becomes qualified (goal scored) during delay → discard candidate is cleared
+  - Only discard after delay period if match is still impossible
 
 **Files Modified:**
 - `config/config.json`: Added config flags for dynamic polling and fast polling
@@ -424,10 +428,58 @@ Matched: 0 Betfair event(s) found, but no Live API matches available
     "fast_polling_window": {"start_minute": 74, "end_minute": 76}
   },
   "match_tracking": {
-    "strict_discard_at_60": true
+    "strict_discard_at_60": true,
+    "discard_delay_minutes": 4
   }
 }
 ```
+
+---
+
+### Issue 9: VAR Delay for Discard Candidates ✅
+**Problem:** Customer requested that matches marked for discard at minute 60' should wait 3-5 minutes before actually being discarded, to account for VAR decisions that might cancel goals and bring the match back into a playable state.
+
+**Solution:**
+- **Discard Candidate Tracking:**
+  - When match is "impossible" at minute 60', mark as discard candidate instead of discarding immediately
+  - Track timestamp when match becomes discard candidate
+  - Wait for configurable delay period (default: 4 minutes, range: 3-5 minutes recommended)
+  
+- **Re-check Logic During Delay:**
+  - Re-check if match is still impossible on every update (not just when score changes)
+  - If score changes (VAR might have cancelled goal) → re-check if match is still impossible
+  - If match becomes qualified (goal scored in 60-74) → clear discard candidate
+  - If match is no longer impossible → clear discard candidate
+  
+- **Discard After Delay:**
+  - Only discard match after delay period has passed AND match is still impossible
+  - This avoids losing good opportunities when VAR cancels goals
+
+**Files Modified:**
+- `config/config.json`: Added `discard_delay_minutes` config (default: 4 minutes)
+- `src/logic/match_tracker.py`: 
+  - Added discard candidate tracking fields (`discard_candidate_since`, `discard_candidate_reason`, `discard_candidate_score`)
+  - Modified `update_state()` to implement delay logic instead of immediate discard
+  - Re-check impossible match status on every update during delay period
+  - Clear discard candidate when match becomes qualified or no longer impossible
+- `src/main.py`: Pass `discard_delay_minutes` from config to MatchTracker
+
+**Config Options:**
+```json
+{
+  "match_tracking": {
+    "strict_discard_at_60": true,
+    "discard_delay_minutes": 4
+  }
+}
+```
+
+**Result:**
+- Matches are not discarded immediately when marked as impossible at minute 60'
+- System waits 3-5 minutes (configurable) to account for VAR decisions
+- If VAR cancels a goal during delay, match continues tracking
+- If match becomes qualified during delay, discard candidate is cleared
+- Only matches that remain impossible after delay period are discarded
 
 ---
 
@@ -585,4 +637,5 @@ Matched: 1/4 event(s)
 | 6. Missing rejection reasons | ✅ Fixed | Added detailed logging for unmatched events |
 | 7. Dynamic polling & fast polling | ✅ Fixed | Livescore 60s↔10s, Betfair 1s at 74'-76', strict discard at 60' |
 | 8. Live API competition filtering | ✅ Fixed | Filter Live API matches by Excel competitions |
+| 9. VAR delay for discard candidates | ✅ Fixed | Wait 3-5 minutes before discarding impossible matches to account for VAR decisions |
 

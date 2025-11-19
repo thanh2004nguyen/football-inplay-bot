@@ -5,7 +5,7 @@ Tracks match state and updates match data from Live Score API
 import logging
 from typing import Dict, Any, Optional, List
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger("BetfairBot")
 
@@ -30,7 +30,8 @@ class MatchTracker:
                  var_check_enabled: bool = True,
                  target_over: float = None,
                  early_discard_enabled: bool = True,
-                 strict_discard_at_60: bool = False):
+                 strict_discard_at_60: bool = False,
+                 discard_delay_minutes: int = 4):
         """
         Initialize match tracker
         
@@ -55,6 +56,12 @@ class MatchTracker:
         self.target_over = target_over
         self.early_discard_enabled = early_discard_enabled
         self.strict_discard_at_60 = strict_discard_at_60
+        self.discard_delay_minutes = discard_delay_minutes
+        
+        # Discard candidate tracking (for VAR delay)
+        self.discard_candidate_since: Optional[datetime] = None  # When match became discard candidate
+        self.discard_candidate_reason: Optional[str] = None  # Reason for discard candidate
+        self.discard_candidate_score: Optional[str] = None  # Score when marked as discard candidate
         
         # Match data
         self.current_score = "0-0"
@@ -156,6 +163,75 @@ class MatchTracker:
             self.score_at_minute_60 = self.current_score
         
         elif self.state == MatchState.MONITORING_60_74:
+            # Check if we have a discard candidate and if delay has passed
+            if self.discard_candidate_since is not None:
+                # Re-check if match is still impossible (even if score unchanged, might have been qualified)
+                strict_discard = getattr(self, 'strict_discard_at_60', False)
+                still_impossible = False
+                
+                if strict_discard and excel_path:
+                    from logic.qualification import is_impossible_match_at_60
+                    still_impossible, new_reason = is_impossible_match_at_60(
+                        self.current_score, 
+                        self.competition_name, 
+                        excel_path
+                    )
+                    
+                    # Check if score changed (VAR might have cancelled a goal)
+                    if self.current_score != self.discard_candidate_score:
+                        if not still_impossible:
+                            # Match is no longer impossible - clear discard candidate (VAR cancelled goal)
+                            logger.info(f"Match {self.betfair_event_name}: Score changed from {self.discard_candidate_score} to {self.current_score} - match no longer impossible, clearing discard candidate (VAR check)")
+                            self.discard_candidate_since = None
+                            self.discard_candidate_reason = None
+                            self.discard_candidate_score = None
+                        else:
+                            # Still impossible but score changed - update candidate info
+                            logger.info(f"Match {self.betfair_event_name}: Score changed from {self.discard_candidate_score} to {self.current_score} but still impossible - updating discard candidate")
+                            self.discard_candidate_reason = new_reason
+                            self.discard_candidate_score = self.current_score
+                    elif not still_impossible:
+                        # Score unchanged but match is no longer impossible (shouldn't happen, but safe check)
+                        logger.info(f"Match {self.betfair_event_name}: Match no longer impossible - clearing discard candidate")
+                        self.discard_candidate_since = None
+                        self.discard_candidate_reason = None
+                        self.discard_candidate_score = None
+                    else:
+                        # Still impossible and score unchanged - check if delay has passed
+                        delay_duration = timedelta(minutes=self.discard_delay_minutes)
+                        if datetime.now() - self.discard_candidate_since >= delay_duration:
+                            # Delay has passed - now discard the match
+                            self.state = MatchState.DISQUALIFIED
+                            self.discard_reason = f"impossible-match-after-delay: {self.discard_candidate_reason}"
+                            logger.info(f"Match {self.betfair_event_name}: DISQUALIFIED after {self.discard_delay_minutes} minute delay - {self.discard_candidate_reason}")
+                            return
+                        else:
+                            # Still waiting for delay - log status
+                            elapsed = (datetime.now() - self.discard_candidate_since).total_seconds() / 60
+                            remaining = self.discard_delay_minutes - elapsed
+                            logger.debug(f"Match {self.betfair_event_name}: Waiting for discard delay ({remaining:.1f} minutes remaining) - {self.discard_candidate_reason}")
+                else:
+                    # Can't check - if score changed, clear candidate to be safe
+                    if self.current_score != self.discard_candidate_score:
+                        logger.info(f"Match {self.betfair_event_name}: Score changed from {self.discard_candidate_score} to {self.current_score} - clearing discard candidate")
+                        self.discard_candidate_since = None
+                        self.discard_candidate_reason = None
+                        self.discard_candidate_score = None
+                    else:
+                        # Score unchanged - check if delay has passed
+                        delay_duration = timedelta(minutes=self.discard_delay_minutes)
+                        if datetime.now() - self.discard_candidate_since >= delay_duration:
+                            # Delay has passed - now discard the match
+                            self.state = MatchState.DISQUALIFIED
+                            self.discard_reason = f"impossible-match-after-delay: {self.discard_candidate_reason}"
+                            logger.info(f"Match {self.betfair_event_name}: DISQUALIFIED after {self.discard_delay_minutes} minute delay - {self.discard_candidate_reason}")
+                            return
+                        else:
+                            # Still waiting for delay - log status
+                            elapsed = (datetime.now() - self.discard_candidate_since).total_seconds() / 60
+                            remaining = self.discard_delay_minutes - elapsed
+                            logger.debug(f"Match {self.betfair_event_name}: Waiting for discard delay ({remaining:.1f} minutes remaining) - {self.discard_candidate_reason}")
+            
             # Check qualification
             if not self.qualified:
                 # Get strict_discard_at_60 from config (passed via update_state)
@@ -176,13 +252,32 @@ class MatchTracker:
                     strict_discard_at_60=strict_discard
                 )
                 
-                # If out of target at minute 60, immediately disqualify
+                # If out of target at minute 60, immediately disqualify (not related to strict discard)
                 if not qualified and "Out of target" in reason:
                     self.state = MatchState.DISQUALIFIED
                     logger.info(f"Match {self.betfair_event_name}: DISQUALIFIED - {reason}")
                     return
                 
+                # Check for strict discard (impossible match) - but use delay instead of immediate discard
+                if not qualified and "Impossible match" in reason and strict_discard:
+                    # Mark as discard candidate instead of discarding immediately
+                    if self.discard_candidate_since is None:
+                        # First time marking as discard candidate
+                        self.discard_candidate_since = datetime.now()
+                        self.discard_candidate_reason = reason
+                        self.discard_candidate_score = self.current_score
+                        logger.info(f"Match {self.betfair_event_name}: Marked as discard candidate (waiting {self.discard_delay_minutes} minutes for VAR) - {reason}")
+                    # If already a discard candidate, continue waiting (handled above)
+                    return
+                
                 if qualified:
+                    # Clear discard candidate if match becomes qualified (goal scored or 0-0 exception)
+                    if self.discard_candidate_since is not None:
+                        logger.info(f"Match {self.betfair_event_name}: Match qualified - clearing discard candidate")
+                        self.discard_candidate_since = None
+                        self.discard_candidate_reason = None
+                        self.discard_candidate_score = None
+                    
                     self.qualified = True
                     self.qualification_reason = reason
                     self.qualified_at = datetime.now()

@@ -424,8 +424,9 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
                     print(f"  {skip_message}")
                     continue
                 
-                # Get strict_discard_at_60 from config
+                # Get strict_discard_at_60 and discard_delay_minutes from config
                 strict_discard_at_60 = match_tracking_config.get("strict_discard_at_60", False)
+                discard_delay_minutes = match_tracking_config.get("discard_delay_minutes", 4)
                 
                 # Create tracker (only if minute <= 74)
                 tracker = MatchTracker(
@@ -439,7 +440,8 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
                     var_check_enabled=var_check_enabled,
                     target_over=target_over,
                     early_discard_enabled=early_discard_enabled,
-                    strict_discard_at_60=strict_discard_at_60
+                    strict_discard_at_60=strict_discard_at_60,
+                    discard_delay_minutes=discard_delay_minutes
                 )
                 
                 # Get goals from events endpoint if match is in monitoring window
