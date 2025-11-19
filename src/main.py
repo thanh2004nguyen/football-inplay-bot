@@ -740,7 +740,7 @@ def main():
                     
                     # MỤC 6.1: Log Betfair events clearly - show ALL matches EVERY iteration
                     # Only use logger.info() - it already outputs to console via console_handler
-                    logger.info(f"\n[{iteration}] Betfair: {len(unique_events)} live match(es) available")
+                    logger.info(f"\n[{iteration}] Betfair: {len(unique_events)} live matches available")
                     
                     # MỤC 6.1: Show ALL events (not just first 5) - log every iteration
                     event_list = list(unique_events.values())
@@ -814,7 +814,7 @@ def main():
                         if should_call_api:
                             if live_matches:
                                 # Only use logger.info() - it already outputs to console via console_handler
-                                logger.info(f"Live API: {len(live_matches)} live match(es) available")
+                                logger.info(f"Live API: {len(live_matches)} live matches available")
                                 # Log ALL matches (not just first 5) - MỤC 6.1
                                 # Filter out FINISHED matches before logging (double check, should already be filtered in get_live_matches)
                                 actual_live = [lm for lm in live_matches if "FINISHED" not in str(lm.get("status", "")).upper()]
@@ -829,7 +829,7 @@ def main():
                                 main._last_live_count = len(live_matches)
                             else:
                                 # Log when no matches available (only when calling API)
-                                logger.info(f"Live API: No live matches available")
+                                logger.info(f"Live API: 0 live matches available")
                         
                         # Check if we need to refresh matching (every 60 minutes)
                         current_time = time.time()
@@ -939,7 +939,7 @@ def main():
                                 last_live_api_call_time = current_time
                                 
                                 # Log refresh
-                                logger.info(f"\n[{iteration}] Betfair: {len(unique_events)} live match(es) available (refresh)")
+                                logger.info(f"\n[{iteration}] Betfair: {len(unique_events)} live matches available (refresh)")
                                 for i, event_data in enumerate(list(unique_events.values()), 1):
                                     event = event_data["event"]
                                     event_name = event.get("name", "N/A")
@@ -948,7 +948,7 @@ def main():
                                     logger.info(f"  [{i}] {event_name} ({competition_name}) - {market_count} market(s)")
                                 
                                 if live_matches:
-                                    logger.info(f"Live API: {len(live_matches)} live match(es) available (refresh)")
+                                    logger.info(f"Live API: {len(live_matches)} live matches available (refresh)")
                                     actual_live = [lm for lm in live_matches if "FINISHED" not in str(lm.get("status", "")).upper()]
                                     for i, lm in enumerate(actual_live, 1):
                                         home, away = parse_match_teams(lm)
