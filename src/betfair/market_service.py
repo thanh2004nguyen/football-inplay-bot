@@ -182,74 +182,147 @@ class MarketService:
                              max_results: int = 1000) -> List[Dict[str, Any]]:
         """
         List market catalogue with filters
+        Automatically handles pagination when there are more markets than maxResults
         
         Args:
             event_type_ids: List of event type IDs (e.g., [1] for Soccer)
             competition_ids: Optional list of competition IDs to filter
-            in_play_only: Only return in-play markets
+            in_play_only: Only return in-play markets (not used, kept for compatibility)
             market_type_codes: Optional list of market type codes (e.g., ["MATCH_ODDS"])
-            max_results: Maximum number of results to return
+            max_results: Maximum number of results per request (default 200)
         
         Returns:
-            List of market catalogue dictionaries
+            List of market catalogue dictionaries (all markets, not just first batch)
         """
         try:
             url = f"{self.api_endpoint}/listMarketCatalogue/"
             
-            # Build filter
-            filter_dict = {
+            # Build base filter
+            # NOTE: inPlay filter in catalogue can be used for quick filtering (as in test_betfair_stream_realtime.py)
+            # For main matching logic, we verify with MarketBook for accuracy
+            # But for get_all_live_events_from_betfair(), we use inPlay filter for speed
+            base_filter = {
                 "eventTypeIds": event_type_ids,
-                "inPlay": in_play_only
             }
             
-            if competition_ids:
-                filter_dict["competitionIds"] = competition_ids
+            # Add inPlay filter if requested (used by get_all_live_events_from_betfair)
+            if in_play_only:
+                base_filter["inPlay"] = True
             
             if market_type_codes:
-                filter_dict["marketTypeCodes"] = market_type_codes
+                base_filter["marketTypeCodes"] = market_type_codes
             
-            # Reduce marketProjection to minimize data size
-            # Only request essential fields to avoid TOO_MUCH_DATA
+            # Reduce marketProjection to minimize data size (similar to test_betfair_stream_realtime.py)
+            # MARKET_DESCRIPTION is the main weight contributor (weight 1)
+            # COMPETITION and EVENT have weight 0, so they don't affect data weight limit
+            # We include COMPETITION and EVENT because main.py needs them (weight 0, so safe)
             market_projection = [
-                "COMPETITION",
-                "EVENT",
-                "MARKET_DESCRIPTION"
+                "MARKET_DESCRIPTION",  # Main projection (weight 1) - same as test script
+                "COMPETITION",         # Weight 0 - needed by main.py for competition info
+                "EVENT"                # Weight 0 - needed by main.py for event info
             ]
+            # Note: test_betfair_stream_realtime.py only uses MARKET_DESCRIPTION, but main.py
+            # needs event and competition data, so we add them (weight 0, won't affect data weight)
             
             # Calculate weight and adjust max_results to stay within limit
             projection_weight = calculate_market_projection_weight(market_projection)
             max_markets_by_weight = self.max_data_weight_points // projection_weight if projection_weight > 0 else 100
             
-            # Reduce maxResults to avoid TOO_MUCH_DATA error
-            # When filtering by competitions, still limit results
-            if competition_ids:
-                max_results = min(max_results, 50, max_markets_by_weight)
-            else:
-                max_results = min(max_results, 100, max_markets_by_weight)
+            # Set maxResults per request (same as test_betfair_stream_realtime.py: 200)
+            max_results_per_request = min(200, max_markets_by_weight)
             
             # Final validation: ensure we don't exceed weight limit
-            total_weight = projection_weight * max_results
+            total_weight = projection_weight * max_results_per_request
             if total_weight > self.max_data_weight_points:
-                max_results = self.max_data_weight_points // projection_weight
-                logger.warning(f"Adjusted max_results to {max_results} to stay within data weight limit "
-                             f"({projection_weight} weight × {max_results} markets = {total_weight} points)")
+                max_results_per_request = self.max_data_weight_points // projection_weight
+                logger.warning(f"Adjusted max_results_per_request to {max_results_per_request} to stay within data weight limit")
             
-            payload = {
-                "filter": filter_dict,
-                "maxResults": max_results,
-                "marketProjection": market_projection
-            }
+            all_markets = []
             
-            logger.debug(f"Requesting market catalogue with filter: {filter_dict}")
+            # Strategy 1: If competition_ids provided, split into batches to get all markets
+            if competition_ids and len(competition_ids) > 0:
+                # Split competitions into batches to avoid TOO_MUCH_DATA
+                # Start with larger batches, but if we hit the limit, process individually
+                competition_batch_size = 10  # Start with 10 competitions at a time
+                remaining_competitions = competition_ids.copy()
+                
+                while remaining_competitions:
+                    # Take next batch
+                    batch_competition_ids = remaining_competitions[:competition_batch_size]
+                    remaining_competitions = remaining_competitions[competition_batch_size:]
+                    
+                    filter_dict = base_filter.copy()
+                    filter_dict["competitionIds"] = batch_competition_ids
+                    
+                    payload = {
+                        "filter": filter_dict,
+                        "maxResults": max_results_per_request,
+                        "marketProjection": market_projection
+                    }
+                    
+                    response = requests.post(url, json=payload, headers=self.headers, timeout=30)
+                    response.raise_for_status()
+                    
+                    result = response.json()
+                    batch_markets = result if isinstance(result, list) else []
+                    all_markets.extend(batch_markets)
+                    
+                    # If we got max_results_per_request, the batch might have more markets
+                    # Process each competition individually to get all markets (silently, no logging)
+                    if len(batch_markets) >= max_results_per_request:
+                        # Process each competition individually
+                        for comp_id in batch_competition_ids:
+                            filter_dict_individual = base_filter.copy()
+                            filter_dict_individual["competitionIds"] = [comp_id]
+                            
+                            payload_individual = {
+                                "filter": filter_dict_individual,
+                                "maxResults": max_results_per_request,
+                                "marketProjection": market_projection
+                            }
+                            
+                            try:
+                                response_individual = requests.post(url, json=payload_individual, headers=self.headers, timeout=30)
+                                response_individual.raise_for_status()
+                                
+                                result_individual = response_individual.json()
+                                individual_markets = result_individual if isinstance(result_individual, list) else []
+                                all_markets.extend(individual_markets)
+                            except Exception as e:
+                                # Silently continue on error
+                                continue
             
-            response = requests.post(url, json=payload, headers=self.headers, timeout=30)
-            response.raise_for_status()
+            # Strategy 2: If no competition_ids, make single request (or multiple if needed)
+            else:
+                filter_dict = base_filter.copy()
+                
+                payload = {
+                    "filter": filter_dict,
+                    "maxResults": max_results_per_request,
+                    "marketProjection": market_projection
+                }
+                
+                response = requests.post(url, json=payload, headers=self.headers, timeout=30)
+                response.raise_for_status()
+                
+                result = response.json()
+                markets = result if isinstance(result, list) else []
+                all_markets.extend(markets)
             
-            result = response.json()
-            markets = result if isinstance(result, list) else []
+            # Remove duplicates (same marketId might appear in multiple batches)
+            seen_market_ids = set()
+            unique_markets = []
+            for market in all_markets:
+                market_id = market.get("marketId")
+                if market_id and market_id not in seen_market_ids:
+                    seen_market_ids.add(market_id)
+                    unique_markets.append(market)
             
-            logger.debug(f"Retrieved {len(markets)} markets from catalogue")
-            return markets
+            # Log only at debug level to avoid cluttering console output
+            logger.debug(f"Retrieved {len(unique_markets)} unique markets from catalogue "
+                        f"(from {len(all_markets)} total, {len(all_markets) - len(unique_markets)} duplicates removed)")
+            
+            return unique_markets
             
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 401:

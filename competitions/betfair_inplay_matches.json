@@ -1,0 +1,289 @@
+{
+  "timestamp": "2025-11-20T20:13:37.555515",
+  "total_inplay_matches": 0,
+  "total_events": 3,
+  "total_markets": 50,
+  "inplay_matches": [],
+  "all_matches": [
+    {
+      "event_id": "34935540",
+      "event_name": "Juventude v Cruzeiro MG",
+      "competition_name": "Brazilian Serie A",
+      "competition_id": "13",
+      "event_time": "2025-11-21 02:00:00",
+      "event_datetime": "2025-11-21T02:00:00+07:00",
+      "time_info": "Starts in 346 minutes",
+      "in_play": false,
+      "status": "N/A",
+      "markets": [
+        {
+          "market_id": "1.250662531",
+          "market_name": "Correct Score",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250662530",
+          "market_name": "Over/Under 5.5 Goals",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250662529",
+          "market_name": "Half Time",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250662528",
+          "market_name": "Over/Under 6.5 Goals",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        }
+      ],
+      "matched_excel": false
+    },
+    {
+      "event_id": "34957114",
+      "event_name": "Hobro v Hvidovre",
+      "competition_name": "Danish 1st Division",
+      "competition_id": "25",
+      "event_time": "2025-11-21 00:30:00",
+      "event_datetime": "2025-11-21T00:30:00+07:00",
+      "time_info": "Starts in 256 minutes",
+      "in_play": false,
+      "status": "N/A",
+      "markets": [
+        {
+          "market_id": "1.250698563",
+          "market_name": "Half Time/Full Time",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250698562",
+          "market_name": "Over/Under 3.5 Goals",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250698561",
+          "market_name": "Over/Under 1.5 Goals",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250698560",
+          "market_name": "Half Time Score",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250698559",
+          "market_name": "Over/Under 4.5 Goals",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250698558",
+          "market_name": "Over/Under 2.5 Goals",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250698557",
+          "market_name": "Correct Score",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250698556",
+          "market_name": "Over/Under 5.5 Goals",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250698567",
+          "market_name": "Over/Under 8.5 Goals",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250698566",
+          "market_name": "Over/Under 7.5 Goals",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250698555",
+          "market_name": "Half Time",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250698554",
+          "market_name": "Over/Under 6.5 Goals",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250698552",
+          "market_name": "Over/Under 0.5 Goals",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250698550",
+          "market_name": "Match Odds",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250698549",
+          "market_name": "Both teams to Score?",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        }
+      ],
+      "matched_excel": false
+    },
+    {
+      "event_id": "34960235",
+      "event_name": "Concordia Chiajna v Bihor Oradea",
+      "competition_name": "Romanian Liga II",
+      "competition_id": "862579",
+      "event_time": "2025-11-21 00:30:00",
+      "event_datetime": "2025-11-21T00:30:00+07:00",
+      "time_info": "Starts in 256 minutes",
+      "in_play": false,
+      "status": "N/A",
+      "markets": [
+        {
+          "market_id": "1.250681395",
+          "market_name": "Match Odds",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250681394",
+          "market_name": "Both teams to Score?",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250681404",
+          "market_name": "Over/Under 4.5 Goals",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250681403",
+          "market_name": "Over/Under 2.5 Goals",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250681402",
+          "market_name": "Correct Score",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250681401",
+          "market_name": "Over/Under 5.5 Goals",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250681400",
+          "market_name": "Half Time",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250681399",
+          "market_name": "Over/Under 6.5 Goals",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250681397",
+          "market_name": "Over/Under 0.5 Goals",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250681412",
+          "market_name": "Over/Under 8.5 Goals",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250681411",
+          "market_name": "Over/Under 7.5 Goals",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250681408",
+          "market_name": "Half Time/Full Time",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250681407",
+          "market_name": "Over/Under 3.5 Goals",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250681406",
+          "market_name": "Over/Under 1.5 Goals",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        },
+        {
+          "market_id": "1.250681405",
+          "market_name": "Half Time Score",
+          "market_type": "N/A",
+          "in_play": false,
+          "status": "N/A"
+        }
+      ],
+      "matched_excel": false
+    }
+  ]
+}

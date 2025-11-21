@@ -24,3 +24,8 @@ playsound3>=3.3.0
 # Web interface (Flask)
 Flask>=3.0.0
 
+# SSL/TLS support for LiveScore API (fixes WinError 10054)
+pyopenssl>=23.2.0
+ndg-httpsclient>=0.5.1
+pyasn1>=0.5.0
+

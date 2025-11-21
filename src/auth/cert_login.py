@@ -114,9 +114,23 @@ class BetfairAuthenticator:
                     
                     return False, error_status
             else:
-                error_msg = f"HTTP {response.status_code}: {response.text[:500]}"
-                logger.error(f"Login request failed: {error_msg}")
-                return False, error_msg
+                # Handle specific HTTP status codes with clean messages
+                if response.status_code == 503:
+                    error_msg = "Server under maintenance (HTTP 503)"
+                    logger.error(f"Login request failed: {error_msg}")
+                    return False, error_msg
+                else:
+                    # For other status codes, log a clean message without full HTML
+                    error_msg = f"HTTP {response.status_code}"
+                    # Only include response text if it's JSON (not HTML)
+                    try:
+                        response.json()
+                        error_msg = f"HTTP {response.status_code}: {response.text[:200]}"
+                    except (ValueError, AttributeError):
+                        # Response is HTML or not JSON, just show status code
+                        pass
+                    logger.error(f"Login request failed: {error_msg}")
+                    return False, error_msg
                 
         except requests.exceptions.SSLError as e:
             error_msg = f"SSL error during login: {str(e)}"
@@ -225,9 +239,23 @@ class BetfairAuthenticator:
                     
                     return False, error_status
             else:
-                error_msg = f"HTTP {response.status_code}: {response.text[:500]}"
-                logger.error(f"Login request failed: {error_msg}")
-                return False, error_msg
+                # Handle specific HTTP status codes with clean messages
+                if response.status_code == 503:
+                    error_msg = "Server under maintenance (HTTP 503)"
+                    logger.error(f"Login request failed: {error_msg}")
+                    return False, error_msg
+                else:
+                    # For other status codes, log a clean message without full HTML
+                    error_msg = f"HTTP {response.status_code}"
+                    # Only include response text if it's JSON (not HTML)
+                    try:
+                        response.json()
+                        error_msg = f"HTTP {response.status_code}: {response.text[:200]}"
+                    except (ValueError, AttributeError):
+                        # Response is HTML or not JSON, just show status code
+                        pass
+                    logger.error(f"Login request failed: {error_msg}")
+                    return False, error_msg
                 
         except requests.exceptions.RequestException as e:
             error_msg = f"Request error during login: {str(e)}"

@@ -50,10 +50,15 @@ def perform_login_with_retry(config: dict, authenticator: Any, email_notifier: O
                 break
             else:
                 # Check if it's a maintenance/regulator error
-                is_maintenance_error = "UNAVAILABLE_CONNECTIVITY_TO_REGULATOR_IT" in str(error)
+                error_str = str(error).upper()
+                is_maintenance_error = (
+                    "UNAVAILABLE_CONNECTIVITY_TO_REGULATOR_IT" in error_str or
+                    "HTTP 503" in error_str or
+                    "SERVER UNDER MAINTENANCE" in error_str
+                )
                 
                 # Check if it's a connectivity/regulator error (should retry)
-                is_retryable_error = is_maintenance_error or any(keyword in str(error) for keyword in [
+                is_retryable_error = is_maintenance_error or any(keyword in error_str for keyword in [
                     "UNAVAILABLE_CONNECTIVITY",
                     "CONNECTION",
                     "TIMEOUT",
@@ -66,7 +71,7 @@ def perform_login_with_retry(config: dict, authenticator: Any, email_notifier: O
                 if is_maintenance_error:
                     # Maintenance error - show maintenance message only once
                     if login_attempt == 1:
-                        print(f"⚠ Betfair Italy Exchange is under maintenance. Check status: https://www.betfair.it")
+                        print(f"⚠ Server under maintenance. Check status: https://www.betfair.it")
                         logger.warning(f"Betfair maintenance detected: {error}")
                         logger.info("Check service status at: https://www.betfair.it")
                         

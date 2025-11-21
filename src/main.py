@@ -5,8 +5,11 @@ Milestone 2: Authentication, Market Detection & Live Data Integration
 import sys
 import time
 import requests
+import socket
+import ssl
+import json
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -28,6 +31,297 @@ import logging
 from datetime import datetime
 
 logger = logging.getLogger("BetfairBot")
+
+
+def get_live_markets_from_stream_api(app_key: str, session_token: str, api_endpoint: str, 
+                                     market_type_codes: List[str] = None,
+                                     collect_duration: float = 5.0) -> List[Dict[str, Any]]:
+    """
+    Get live markets from Betfair Stream API (same as test_betfair_stream_realtime.py).
+    Only returns markets that are actually OPEN and inPlay (verified by Stream API).
+    
+    Args:
+        app_key: Betfair Application Key
+        session_token: Betfair session token
+        api_endpoint: Betfair REST API endpoint
+        market_type_codes: List of market type codes (e.g., ["OVER_UNDER_05", ...])
+        collect_duration: How long to collect messages from Stream API (seconds)
+    
+    Returns:
+        List of market dictionaries that are verified to be OPEN and inPlay
+    """
+    import requests
+    
+    if not market_type_codes:
+        market_type_codes = ["OVER_UNDER_05", "OVER_UNDER_15", "OVER_UNDER_25", "OVER_UNDER_35", "OVER_UNDER_45"]
+    
+    # Step 1: Get market IDs from REST API (same as test script)
+    url = f"{api_endpoint}/listMarketCatalogue/"
+    headers = {
+        "X-Application": app_key,
+        "X-Authentication": session_token,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+    
+    payload = {
+        "filter": {
+            "eventTypeIds": [1],  # Football
+            "marketTypeCodes": market_type_codes,
+            "inPlay": True
+        },
+        "maxResults": 200,
+        "marketProjection": ["MARKET_DESCRIPTION", "COMPETITION", "EVENT"]
+    }
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        if response.status_code != 200:
+            logger.warning(f"Failed to get markets from REST API: {response.status_code}")
+            return []
+        
+        markets = response.json()
+        if not isinstance(markets, list):
+            return []
+        
+        market_ids = [str(m.get("marketId")) for m in markets if m.get("marketId")]
+        if not market_ids:
+            return []
+        
+        # Create a mapping from market_id to market data
+        market_data_map = {}
+        for m in markets:
+            market_id = m.get("marketId")
+            if market_id:
+                market_data_map[str(market_id)] = m
+        
+        logger.debug(f"Got {len(market_ids)} market IDs from REST API, connecting to Stream API...")
+        
+    except Exception as e:
+        logger.warning(f"Error getting markets from REST API: {str(e)}")
+        return []
+    
+    # Step 2: Connect to Stream API and subscribe
+    sock = None
+    ssl_sock = None
+    live_markets = {}  # market_id -> market data
+    
+    try:
+        # Create SSL socket connection
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(30)
+        sock.connect(("stream-api.betfair.com", 443))
+        
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        ssl_sock = context.wrap_socket(sock, server_hostname="stream-api.betfair.com")
+        
+        # Authenticate
+        auth_msg = {
+            "op": "authentication",
+            "appKey": app_key,
+            "session": session_token
+        }
+        payload_auth = json.dumps(auth_msg) + "\r\n"
+        ssl_sock.send(payload_auth.encode('utf-8'))
+        
+        # Receive auth response (may be connection message first, then status message)
+        # Same logic as test_betfair_stream_realtime.py
+        ssl_sock.settimeout(10)
+        message_buffer = b""
+        auth_success = False
+        
+        # Read messages until we get authentication status (same as test script)
+        for _ in range(3):  # Try up to 3 messages
+            try:
+                data = ssl_sock.recv(4096)
+                if not data:
+                    break
+                message_buffer += data
+                
+                # Process complete messages (separated by CRLF)
+                while b"\r\n" in message_buffer:
+                    parts = message_buffer.split(b"\r\n", 1)
+                    complete_message = parts[0].decode('utf-8', errors='ignore')
+                    message_buffer = parts[1] if len(parts) > 1 else b""
+                    
+                    if complete_message.strip():
+                        try:
+                            msg = json.loads(complete_message.strip())
+                            op = msg.get("op")
+                            
+                            if op == "connection":
+                                # Connection message is normal (first message), continue to wait for status
+                                logger.debug("Received connection message from Stream API")
+                                continue
+                            elif op == "status":
+                                status_code = msg.get("statusCode")
+                                if status_code == "SUCCESS":
+                                    auth_success = True
+                                    logger.debug("Stream API authentication successful")
+                                    break
+                                else:
+                                    error_msg = msg.get("error", "Unknown error")
+                                    logger.warning(f"Stream API authentication failed: {status_code} - {error_msg}")
+                                    return []
+                        except json.JSONDecodeError:
+                            continue
+                
+                if auth_success:
+                    break
+            except socket.timeout:
+                # If timeout, check if we have any data in buffer
+                if message_buffer:
+                    try:
+                        # Try to parse what we have
+                        msg = json.loads(message_buffer.decode('utf-8', errors='ignore').strip())
+                        if msg.get("op") == "status" and msg.get("statusCode") == "SUCCESS":
+                            auth_success = True
+                            break
+                    except:
+                        pass
+                break
+        
+        if not auth_success:
+            logger.warning("Stream API authentication: No SUCCESS status received")
+            return []
+        
+        # Subscribe to markets (max 200 per subscription)
+        if len(market_ids) > 200:
+            market_ids = market_ids[:200]
+        
+        sub_msg = {
+            "op": "marketSubscription",
+            "id": 1,
+            "marketFilter": {
+                "marketIds": market_ids
+            },
+            "marketDataFilter": {
+                "fields": ["EX_MARKET_DEF", "EX_ALL_OFFERS"]
+            },
+            "heartbeatMs": 5000,
+            "conflateMs": 0
+        }
+        payload_sub = json.dumps(sub_msg) + "\r\n"
+        ssl_sock.send(payload_sub.encode('utf-8'))
+        
+        logger.debug(f"Subscribed to {len(market_ids)} markets, collecting messages for {collect_duration}s...")
+        
+        # Step 3: Collect messages for a short duration
+        message_buffer = b""
+        start_time = time.time()
+        
+        while time.time() - start_time < collect_duration:
+            try:
+                ssl_sock.settimeout(1.0)
+                data = ssl_sock.recv(4096)
+                if not data:
+                    break
+                
+                message_buffer += data
+                
+                # Process complete messages (separated by CRLF)
+                while b"\r\n" in message_buffer:
+                    parts = message_buffer.split(b"\r\n", 1)
+                    complete_message = parts[0].decode('utf-8', errors='ignore')
+                    message_buffer = parts[1] if len(parts) > 1 else b""
+                    
+                    if complete_message.strip():
+                        try:
+                            msg = json.loads(complete_message.strip())
+                            op = msg.get("op")
+                            
+                            if op == "mcm":  # MarketChangeMessage
+                                mc = msg.get("mc") or []
+                                for market in mc:
+                                    mid = market.get("id")
+                                    md = market.get("marketDefinition") or {}
+                                    inplay = md.get("inPlay", False)
+                                    status = md.get("status")
+                                    
+                                    # Only keep markets that are OPEN and inPlay (same as test script)
+                                    if inplay and status and status.upper() == "OPEN":
+                                        if mid and mid in market_data_map:
+                                            # Store market data
+                                            live_markets[mid] = market_data_map[mid]
+                        except json.JSONDecodeError:
+                            continue
+                        except Exception as e:
+                            logger.debug(f"Error processing Stream API message: {str(e)}")
+                            continue
+            except socket.timeout:
+                continue
+            except Exception as e:
+                logger.debug(f"Error receiving from Stream API: {str(e)}")
+                break
+        
+        logger.debug(f"Collected {len(live_markets)} live markets from Stream API")
+        
+    except Exception as e:
+        logger.warning(f"Error connecting to Stream API: {str(e)}")
+    finally:
+        if ssl_sock:
+            try:
+                ssl_sock.close()
+            except:
+                pass
+        if sock:
+            try:
+                sock.close()
+            except:
+                pass
+    
+    return list(live_markets.values())
+
+
+def get_all_live_events_from_betfair(market_service, event_type_ids: List[int]) -> List[Dict[str, Any]]:
+    """
+    Get all live events from Betfair (not filtered by Excel competitions).
+    Similar to test_betfair_stream_realtime.py logic - uses inPlay filter in catalogue.
+    
+    Args:
+        market_service: MarketService instance
+        event_type_ids: List of event type IDs (e.g., [1] for Football)
+    
+    Returns:
+        List of unique live events with format: [{"event_id": "...", "event_name": "..."}, ...]
+    """
+    try:
+        # Get all Under/Over markets with inPlay filter (same as test_betfair_stream_realtime.py)
+        market_type_codes = ["OVER_UNDER_05", "OVER_UNDER_15", "OVER_UNDER_25", "OVER_UNDER_35", "OVER_UNDER_45"]
+        
+        # Use inPlay filter in catalogue (same as test script)
+        markets = market_service.list_market_catalogue(
+            event_type_ids=event_type_ids,
+            competition_ids=None,  # Don't filter by competition - get ALL live events
+            in_play_only=True,  # Use inPlay filter (same as test_betfair_stream_realtime.py)
+            market_type_codes=market_type_codes,
+            max_results=200  # Same as test script
+        )
+        
+        if not markets:
+            return []
+        
+        # Extract unique events directly from catalogue (no MarketBook verification needed)
+        # Test script proves this works - it gets inPlay markets from catalogue
+        unique_events = {}
+        for market in markets:
+            event = market.get("event", {})
+            event_id = event.get("id", "")
+            event_name = event.get("name", "N/A")
+            
+            if event_id and event_id not in unique_events:
+                unique_events[event_id] = {
+                    "event_id": str(event_id),
+                    "event_name": event_name
+                }
+        
+        return list(unique_events.values())
+        
+    except Exception as e:
+        logger.debug(f"Error getting all live events from Betfair: {str(e)}")
+        return []
 
 
 def perform_matching(unique_events: Dict[str, Dict[str, Any]], 
@@ -671,80 +965,96 @@ def main():
             logger.debug(f"--- Detection iteration #{iteration} ---")
             
             try:
-                # Get market catalogue
-                markets = market_service.list_market_catalogue(
-                    event_type_ids=event_type_ids,
-                    competition_ids=competition_ids if competition_ids else None,
-                    in_play_only=in_play_only
+                # Get market catalogue (same approach as test_betfair_stream_realtime.py)
+                # Focus on Under/Over markets only for faster execution and alignment with strategy
+                market_type_codes = ["OVER_UNDER_05", "OVER_UNDER_15", "OVER_UNDER_25", "OVER_UNDER_35", "OVER_UNDER_45"]
+                
+                # Step 1: Get live markets from Stream API (same as test_betfair_stream_realtime.py)
+                # Stream API only returns markets that are actually OPEN and inPlay (verified)
+                markets = get_live_markets_from_stream_api(
+                    app_key=betfair_config["app_key"],
+                    session_token=market_service.session_token,
+                    api_endpoint=market_service.api_endpoint,
+                    market_type_codes=market_type_codes,
+                    collect_duration=5.0  # Collect messages for 5 seconds
                 )
                 
-                # Filter to only keep match-specific markets (exclude Winner/Champion)
-                if markets:
-                    markets = filter_match_specific_markets(markets)
-                    logger.debug(f"After filtering: {len(markets)} match-specific market(s)")
+                # Note: No need to filter with filter_match_specific_markets() since we're already
+                # only requesting Under/Over markets via market_type_codes
                 
+                # Step 2: Get ALL unique events from in-play markets (for logging - not filtered by Excel)
+                # This is to verify we're getting live matches correctly (same as test_betfair_stream_realtime.py)
+                all_live_events: Dict[str, Dict[str, Any]] = {}
                 if markets:
-                    # Verify actual live status using MarketBook (more accurate than MarketCatalogue)
-                    logger.debug("Verifying actual live status using MarketBook...")
-                    market_ids = [m.get("marketId") for m in markets if m.get("marketId")]
-                    
-                    verified_live_markets = {}
-                    if market_ids:
-                        try:
-                            # Get MarketBook for verification (limit to first 50 to avoid too much data)
-                            market_ids_to_verify = market_ids[:50]
-                            market_books = market_service.list_market_book(
-                                market_ids_to_verify,
-                                price_projection={"priceData": []}  # No price data needed, just status
-                            )
-                            
-                            # Create a map of market_id -> verified status
-                            for book in market_books:
-                                market_id = book.get("marketId")
-                                market_def = book.get("marketDefinition", {})
-                                actual_status = market_def.get("status", "")
-                                actual_in_play = market_def.get("inPlay", False)
-                                
-                                # Only consider markets that are OPEN and inPlay (actually live)
-                                if actual_status == "OPEN" and actual_in_play:
-                                    verified_live_markets[market_id] = {
-                                        "status": actual_status,
-                                        "inPlay": actual_in_play
-                                    }
-                            
-                            logger.debug(f"Verified {len(verified_live_markets)} markets are actually LIVE (OPEN + inPlay)")
-                            
-                            # Filter markets to only keep verified live ones
-                            if verified_live_markets:
-                                markets = [m for m in markets if m.get("marketId") in verified_live_markets]
-                                logger.debug(f"After verification: {len(markets)} verified live market(s)")
-                            else:
-                                markets = []
-                                logger.debug("No verified live markets found")
-                        except Exception as e:
-                            logger.warning(f"Error verifying with MarketBook: {str(e)}, using MarketCatalogue data")
-                            # Fallback: use MarketCatalogue data but log warning
-                            logger.warning("⚠ Using MarketCatalogue data (not verified with MarketBook)")
-                    
-                    # Get unique events from verified live markets
-                    unique_events: Dict[str, Dict[str, Any]] = {}
                     for market in markets:
                         event = market.get("event", {})
                         event_id = event.get("id", "")
-                        if event_id and event_id not in unique_events:
-                            unique_events[event_id] = {
+                        if event_id and event_id not in all_live_events:
+                            all_live_events[event_id] = {
                                 "event": event,
                                 "competition": market.get("competition", {}),
                                 "markets": []
                             }
                         if event_id:
+                            all_live_events[event_id]["markets"].append(market)
+                
+                # Log ALL live events on Betfair (not filtered by Excel) - same format as test_betfair_stream_realtime.py
+                if all_live_events:
+                    event_strings = []
+                    for event_data in all_live_events.values():
+                        event = event_data["event"]
+                        event_id = event.get("id", "")
+                        event_name = event.get("name", "N/A")
+                        event_strings.append(f"{event_id}_{event_name}")
+                    logger.info(f"Betfair lives: {', '.join(event_strings)}")
+                # else:
+                #     logger.info("Betfair lives: (no live events)")
+                
+                # Step 3: Filter by competition_ids from Excel (only keep matches from Excel competitions)
+                unique_events: Dict[str, Dict[str, Any]] = {}
+                if markets:
+                    for market in markets:
+                        event = market.get("event", {})
+                        event_id = event.get("id", "")
+                        competition = market.get("competition", {})
+                        competition_id = competition.get("id")
+                        competition_name = competition.get("name", "N/A")
+                        
+                        # Filter by competition_ids from Excel (only keep matches from Excel competitions)
+                        if competition_ids:
+                            if not competition_id:
+                                # Market has no competition_id - skip it (cannot match with Excel)
+                                logger.debug(f"Skipping {event.get('name', 'N/A')} - no competition_id in market data")
+                                continue
+                            
+                            # Convert competition_id to int for comparison (Betfair returns as int or string)
+                            try:
+                                comp_id_int = int(competition_id)
+                            except (ValueError, TypeError):
+                                logger.debug(f"Skipping {event.get('name', 'N/A')} - invalid competition_id: {competition_id}")
+                                continue
+                            
+                            # Check if competition_id is in Excel competitions list
+                            if comp_id_int not in competition_ids:
+                                logger.debug(f"Skipping {event.get('name', 'N/A')} - competition_id {comp_id_int} ({competition_name}) not in Excel competitions")
+                                continue  # Skip this market - not in Excel competitions
+                        
+                        if event_id and event_id not in unique_events:
+                            unique_events[event_id] = {
+                                "event": event,
+                                "competition": competition,
+                                "markets": []
+                            }
+                        if event_id:
                             unique_events[event_id]["markets"].append(market)
-                    
-                    # MỤC 6.1: Log Betfair events clearly - show ALL matches EVERY iteration
-                    # Only use logger.info() - it already outputs to console via console_handler
-                    logger.info(f"\n[{iteration}] Betfair: {len(unique_events)} live matches available")
-                    
-                    # MỤC 6.1: Show ALL events (not just first 5) - log every iteration
+                
+                # MỤC 6.1: Log Betfair events clearly - show ALL matches EVERY iteration
+                # Always log, even if 0 matches (as per CONSOLE_FEED_EXAMPLE.md)
+                betfair_msg = f"Betfair: {len(unique_events)} available matches after comparing with Excel."
+                logger.info(betfair_msg)
+                
+                # MỤC 6.1: Show ALL events (not just first 5) - log every iteration
+                if unique_events:
                     event_list = list(unique_events.values())
                     for i, event_data in enumerate(event_list, 1):
                         event = event_data["event"]
@@ -752,15 +1062,17 @@ def main():
                         competition_name = event_data["competition"].get("name", "N/A")
                         market_count = len(event_data["markets"])
                         
-                        logger.info(f"  [{i}] {event_name} ({competition_name}) - {market_count} market(s)")
+                        event_msg = f"  [{i}] {event_name} ({competition_name}) - {market_count} market(s)"
+                        logger.info(event_msg)
+                
+                # Milestone 2: Match with Live API and start tracking
+                # Move Live API logging outside of unique_events check so it always runs
+                if live_score_client and match_matcher and match_tracker_manager:
+                    # Dynamic polling: Adjust interval based on matches in 60'-76' window
+                    current_time = time.time()
+                    current_live_api_polling_interval = live_api_polling_interval
                     
-                    # Milestone 2: Match with Live API and start tracking
-                    if live_score_client and match_matcher and match_tracker_manager:
-                        # Dynamic polling: Adjust interval based on matches in 60'-76' window
-                        current_time = time.time()
-                        current_live_api_polling_interval = live_api_polling_interval
-                        
-                        if dynamic_polling_enabled:
+                    if dynamic_polling_enabled:
                             # Check if there are valid matches in 60'-76' window
                             all_trackers = match_tracker_manager.get_all_trackers()
                             from logic.match_tracker import MatchState
@@ -777,25 +1089,35 @@ def main():
                             else:
                                 # Default mode: use slower polling
                                 current_live_api_polling_interval = default_polling_interval
-                        
-                        # Check if we need to call API (first call or enough time has passed)
-                        should_call_api = False
-                        if last_live_api_call_time is None:
-                            # First call - always call API
+                    
+                    # Check if we need to call API (first call or enough time has passed)
+                    should_call_api = False
+                    if last_live_api_call_time is None:
+                        # First call - always call API
+                        should_call_api = True
+                    else:
+                        time_since_last_call = current_time - last_live_api_call_time
+                        if time_since_last_call >= current_live_api_polling_interval:
                             should_call_api = True
                         else:
-                            time_since_last_call = current_time - last_live_api_call_time
-                            if time_since_last_call >= current_live_api_polling_interval:
-                                should_call_api = True
+                            # Use cached matches (don't log to reduce noise)
+                            pass
+                    
+                    if should_call_api:
+                        # Time to call Live API
+                        api_unreachable = False
+                        try:
+                            # Pass Live API competition IDs to filter matches
+                            live_matches = live_score_client.get_live_matches(competition_ids=live_api_competition_ids if live_api_competition_ids else None)
+                            
+                            # Check if API is not reachable (None means connection error after retries)
+                            if live_matches is None:
+                                api_unreachable = True
+                                # Use cached data if available
+                                live_matches = cached_live_matches if cached_live_matches else []
+                                # Don't update last_live_api_call_time so we retry sooner
                             else:
-                                # Use cached matches (don't log to reduce noise)
-                                pass
-                        
-                        if should_call_api:
-                            # Time to call Live API
-                            try:
-                                # Pass Live API competition IDs to filter matches
-                                live_matches = live_score_client.get_live_matches(competition_ids=live_api_competition_ids if live_api_competition_ids else None)
+                                # API call successful - update cache and timestamp
                                 last_live_api_call_time = current_time
                                 # Only cache if we got valid data (list)
                                 if isinstance(live_matches, list):
@@ -803,167 +1125,167 @@ def main():
                                 else:
                                     logger.warning(f"Live Score API returned invalid data type, using cached data")
                                     live_matches = cached_live_matches if cached_live_matches else []
-                            except Exception as api_error:
-                                # If API call fails, use cached data if available
-                                logger.warning(f"Live Score API call failed, using cached data: {str(api_error)[:100]}")
-                                live_matches = cached_live_matches if cached_live_matches else []
-                                # Don't update last_live_api_call_time so we retry sooner
+                        except Exception as api_error:
+                            # If API call fails with exception, use cached data if available
+                            logger.warning(f"Live Score API call failed, using cached data: {str(api_error)[:100]}")
+                            live_matches = cached_live_matches if cached_live_matches else []
+                            # Don't update last_live_api_call_time so we retry sooner
+                    else:
+                        # Use cached matches
+                        live_matches = cached_live_matches
+                    
+                    # Log Live API results (only when calling API, not when using cache)
+                    if should_call_api:
+                        if api_unreachable:
+                            # API is not reachable (connection error after retries)
+                            logger.warning("LiveScore API not reachable for this cycle, skipping this poll")
+                        elif live_matches:
+                            # Filter out FINISHED matches before logging
+                            actual_live = [lm for lm in live_matches if "FINISHED" not in str(lm.get("status", "")).upper()]
+                            
+                            # Format log message
+                            live_api_msg = f"Live API: {len(actual_live)} available matches after comparing with Excel."
+                            logger.info(live_api_msg)
+                            
+                            # Log ALL matches (not just first 5) - MỤC 6.1
+                            for i, lm in enumerate(actual_live, 1):  # Log ALL matches
+                                home, away = parse_match_teams(lm)
+                                comp = parse_match_competition(lm)
+                                minute = parse_match_minute(lm)
+                                score = parse_match_score(lm)
+                                status = lm.get("status", "N/A")
+                                match_msg = f"  [{i}] {home} v {away} ({comp}) - {score} @ {minute}' [{status}]"
+                                logger.info(match_msg)
+                            
+                            main._last_live_count = len(live_matches)
                         else:
-                            # Use cached matches
-                            live_matches = cached_live_matches
+                            # Log when no matches available (only when calling API)
+                            logger.info(f"Live API: 0 available matches after comparing with Excel.")
+                    
+                    # Check if we need to refresh matching (every 60 minutes)
+                    current_time = time.time()
+                    should_refresh_matching = False
+                    if last_matching_refresh_time is None:
+                        # First time - don't refresh, just do normal matching
+                        should_refresh_matching = False
+                    else:
+                        time_since_last_refresh = current_time - last_matching_refresh_time
+                        if time_since_last_refresh >= matching_refresh_interval:
+                            should_refresh_matching = True
+                    
+                    # If refresh needed, get fresh data from Betfair and LiveScore
+                    if should_refresh_matching:
+                        # Clear match cache to allow re-matching of new events
+                        # This ensures new Betfair events that appear after bot start can be matched
+                        # with LiveScore matches that may have become available
+                        match_matcher.clear_cache()
+                        logger.info("🔄 Match cache cleared for refresh")
                         
-                        # Log Live API results (only when calling API, not when using cache)
-                        if should_call_api:
+                        # Refresh competition mapping from Excel first
+                        project_root = Path(__file__).parent.parent
+                        excel_path = project_root / "competitions" / "Competitions_Results_Odds_Stake.xlsx"
+                        if excel_path.exists():
+                            try:
+                                betfair_competitions = market_service.list_competitions(event_type_ids)
+                                if betfair_competitions:
+                                    new_competition_ids = get_competition_ids_from_excel(str(excel_path), betfair_competitions)
+                                    if new_competition_ids:
+                                        old_count = len(competition_ids) if competition_ids else 0
+                                        competition_ids = new_competition_ids
+                                        new_count = len(competition_ids)
+                                        if new_count != old_count:
+                                            logger.info(f"🔄 Competition mapping refreshed: {old_count} → {new_count} competition(s)")
+                                        else:
+                                            logger.info(f"🔄 Competition mapping refreshed: {new_count} competition(s) (no change)")
+                            except Exception as e:
+                                logger.warning(f"Failed to refresh competition mapping: {str(e)}")
+                        
+                        # Force refresh: get fresh Betfair markets and LiveScore matches
+                        try:
+                            # Use same approach as main loop: Under/Over markets only
+                            market_type_codes = ["OVER_UNDER_05", "OVER_UNDER_15", "OVER_UNDER_25", "OVER_UNDER_35", "OVER_UNDER_45"]
+                            
+                            # Step 1: Get live markets from Stream API (same as test_betfair_stream_realtime.py)
+                            # Stream API only returns markets that are actually OPEN and inPlay (verified)
+                            markets = get_live_markets_from_stream_api(
+                                app_key=betfair_config["app_key"],
+                                session_token=market_service.session_token,
+                                api_endpoint=market_service.api_endpoint,
+                                market_type_codes=market_type_codes,
+                                collect_duration=5.0  # Collect messages for 5 seconds
+                            )
+                            # Note: No need to filter with filter_match_specific_markets() since we're already
+                            # only requesting Under/Over markets via market_type_codes
+                            
+                            # Step 2: Get unique events from ALL in-play markets, then filter by Excel competitions
+                            unique_events: Dict[str, Dict[str, Any]] = {}
+                            if markets:
+                                for market in markets:
+                                    event = market.get("event", {})
+                                    event_id = event.get("id", "")
+                                    competition = market.get("competition", {})
+                                    competition_id = competition.get("id")
+                                    competition_name = competition.get("name", "N/A")
+                                    
+                                    # Step 3: Filter by competition_ids from Excel (only keep matches from Excel competitions)
+                                    if competition_ids:
+                                        if not competition_id:
+                                            # Market has no competition_id - skip it (cannot match with Excel)
+                                            logger.debug(f"Skipping {event.get('name', 'N/A')} - no competition_id in market data")
+                                            continue
+                                        
+                                        # Convert competition_id to int for comparison (Betfair returns as int or string)
+                                        try:
+                                            comp_id_int = int(competition_id)
+                                        except (ValueError, TypeError):
+                                            logger.debug(f"Skipping {event.get('name', 'N/A')} - invalid competition_id: {competition_id}")
+                                            continue
+                                        
+                                        # Check if competition_id is in Excel competitions list
+                                        if comp_id_int not in competition_ids:
+                                            logger.debug(f"Skipping {event.get('name', 'N/A')} - competition_id {comp_id_int} ({competition_name}) not in Excel competitions")
+                                            continue  # Skip this market - not in Excel competitions
+                                    
+                                    if event_id and event_id not in unique_events:
+                                        unique_events[event_id] = {
+                                            "event": event,
+                                            "competition": competition,
+                                            "markets": []
+                                        }
+                                    if event_id:
+                                        unique_events[event_id]["markets"].append(market)
+                            
+                            # Log refresh
+                            logger.info(f"Betfair: {len(unique_events)} available matches after comparing with Excel.")
+                            for i, event_data in enumerate(list(unique_events.values()), 1):
+                                event = event_data["event"]
+                                event_name = event.get("name", "N/A")
+                                competition_name = event_data["competition"].get("name", "N/A")
+                                market_count = len(event_data["markets"])
+                                logger.info(f"  [{i}] {event_name} ({competition_name}) - {market_count} market(s)")
+                            
+                            # Get fresh LiveScore matches (with competition filter)
+                            live_matches = live_score_client.get_live_matches(competition_ids=live_api_competition_ids if live_api_competition_ids else None)
+                            if isinstance(live_matches, list):
+                                cached_live_matches = live_matches
+                            last_live_api_call_time = current_time
+                            
+                            # Log refresh
                             if live_matches:
-                                # Only use logger.info() - it already outputs to console via console_handler
-                                logger.info(f"Live API: {len(live_matches)} live matches available")
-                                # Log ALL matches (not just first 5) - MỤC 6.1
-                                # Filter out FINISHED matches before logging (double check, should already be filtered in get_live_matches)
+                                logger.info(f"Live API: {len(live_matches)} available matches after comparing with Excel.")
                                 actual_live = [lm for lm in live_matches if "FINISHED" not in str(lm.get("status", "")).upper()]
-                                for i, lm in enumerate(actual_live, 1):  # Log ALL matches
+                                for i, lm in enumerate(actual_live, 1):
                                     home, away = parse_match_teams(lm)
                                     comp = parse_match_competition(lm)
                                     minute = parse_match_minute(lm)
                                     score = parse_match_score(lm)
                                     status = lm.get("status", "N/A")
                                     logger.info(f"  [{i}] {home} v {away} ({comp}) - {score} @ {minute}' [{status}]")
-                                
-                                main._last_live_count = len(live_matches)
-                            else:
-                                # Log when no matches available (only when calling API)
-                                logger.info(f"Live API: 0 live matches available")
-                        
-                        # Check if we need to refresh matching (every 60 minutes)
-                        current_time = time.time()
-                        should_refresh_matching = False
-                        if last_matching_refresh_time is None:
-                            # First time - don't refresh, just do normal matching
+                            
+                            last_matching_refresh_time = current_time
+                        except Exception as e:
+                            logger.warning(f"Failed to refresh matching data: {str(e)}")
                             should_refresh_matching = False
-                        else:
-                            time_since_last_refresh = current_time - last_matching_refresh_time
-                            if time_since_last_refresh >= matching_refresh_interval:
-                                should_refresh_matching = True
-                        
-                        # If refresh needed, get fresh data from Betfair and LiveScore
-                        if should_refresh_matching:
-                            # Clear match cache to allow re-matching of new events
-                            # This ensures new Betfair events that appear after bot start can be matched
-                            # with LiveScore matches that may have become available
-                            match_matcher.clear_cache()
-                            logger.info("🔄 Match cache cleared for refresh")
-                            
-                            # Refresh competition mapping from Excel first
-                            project_root = Path(__file__).parent.parent
-                            excel_path = project_root / "competitions" / "Competitions_Results_Odds_Stake.xlsx"
-                            if excel_path.exists():
-                                try:
-                                    betfair_competitions = market_service.list_competitions(event_type_ids)
-                                    if betfair_competitions:
-                                        new_competition_ids = get_competition_ids_from_excel(str(excel_path), betfair_competitions)
-                                        if new_competition_ids:
-                                            old_count = len(competition_ids) if competition_ids else 0
-                                            competition_ids = new_competition_ids
-                                            new_count = len(competition_ids)
-                                            if new_count != old_count:
-                                                logger.info(f"🔄 Competition mapping refreshed: {old_count} → {new_count} competition(s)")
-                                            else:
-                                                logger.info(f"🔄 Competition mapping refreshed: {new_count} competition(s) (no change)")
-                                except Exception as e:
-                                    logger.warning(f"Failed to refresh competition mapping: {str(e)}")
-                            
-                            # Force refresh: get fresh Betfair markets and LiveScore matches
-                            try:
-                                markets = market_service.list_market_catalogue(
-                                    event_type_ids=event_type_ids,
-                                    competition_ids=competition_ids if competition_ids else None,
-                                    in_play_only=in_play_only
-                                )
-                                if markets:
-                                    markets = filter_match_specific_markets(markets)
-                                
-                                # Verify actual live status using MarketBook
-                                if markets:
-                                    logger.debug("Verifying actual live status using MarketBook (refresh)...")
-                                    market_ids = [m.get("marketId") for m in markets if m.get("marketId")]
-                                    
-                                    verified_live_markets = {}
-                                    if market_ids:
-                                        try:
-                                            # Get MarketBook for verification (limit to first 50)
-                                            market_ids_to_verify = market_ids[:50]
-                                            market_books = market_service.list_market_book(
-                                                market_ids_to_verify,
-                                                price_projection={"priceData": []}
-                                            )
-                                            
-                                            # Create a map of market_id -> verified status
-                                            for book in market_books:
-                                                market_id = book.get("marketId")
-                                                market_def = book.get("marketDefinition", {})
-                                                actual_status = market_def.get("status", "")
-                                                actual_in_play = market_def.get("inPlay", False)
-                                                
-                                                # Only consider markets that are OPEN and inPlay (actually live)
-                                                if actual_status == "OPEN" and actual_in_play:
-                                                    verified_live_markets[market_id] = {
-                                                        "status": actual_status,
-                                                        "inPlay": actual_in_play
-                                                    }
-                                            
-                                            logger.debug(f"Verified {len(verified_live_markets)} markets are actually LIVE (refresh)")
-                                            
-                                            # Filter markets to only keep verified live ones
-                                            if verified_live_markets:
-                                                markets = [m for m in markets if m.get("marketId") in verified_live_markets]
-                                            else:
-                                                markets = []
-                                        except Exception as e:
-                                            logger.warning(f"Error verifying with MarketBook (refresh): {str(e)}")
-                                
-                                # Rebuild unique_events from verified live markets
-                                unique_events: Dict[str, Dict[str, Any]] = {}
-                                for market in markets:
-                                    event = market.get("event", {})
-                                    event_id = event.get("id", "")
-                                    if event_id and event_id not in unique_events:
-                                        unique_events[event_id] = {
-                                            "event": event,
-                                            "competition": market.get("competition", {}),
-                                            "markets": []
-                                        }
-                                    if event_id:
-                                        unique_events[event_id]["markets"].append(market)
-                                
-                                # Get fresh LiveScore matches (with competition filter)
-                                live_matches = live_score_client.get_live_matches(competition_ids=live_api_competition_ids if live_api_competition_ids else None)
-                                if isinstance(live_matches, list):
-                                    cached_live_matches = live_matches
-                                last_live_api_call_time = current_time
-                                
-                                # Log refresh
-                                logger.info(f"\n[{iteration}] Betfair: {len(unique_events)} live matches available (refresh)")
-                                for i, event_data in enumerate(list(unique_events.values()), 1):
-                                    event = event_data["event"]
-                                    event_name = event.get("name", "N/A")
-                                    competition_name = event_data["competition"].get("name", "N/A")
-                                    market_count = len(event_data["markets"])
-                                    logger.info(f"  [{i}] {event_name} ({competition_name}) - {market_count} market(s)")
-                                
-                                if live_matches:
-                                    logger.info(f"Live API: {len(live_matches)} live matches available (refresh)")
-                                    actual_live = [lm for lm in live_matches if "FINISHED" not in str(lm.get("status", "")).upper()]
-                                    for i, lm in enumerate(actual_live, 1):
-                                        home, away = parse_match_teams(lm)
-                                        comp = parse_match_competition(lm)
-                                        minute = parse_match_minute(lm)
-                                        score = parse_match_score(lm)
-                                        status = lm.get("status", "N/A")
-                                        logger.info(f"  [{i}] {home} v {away} ({comp}) - {score} @ {minute}' [{status}]")
-                                
-                                last_matching_refresh_time = current_time
-                            except Exception as e:
-                                logger.warning(f"Failed to refresh matching data: {str(e)}")
-                                should_refresh_matching = False
                         
                         # Perform matching (using function)
                         matched_count, total_events, new_tracked_matches, skipped_matches_list, unmatched_events = perform_matching(
@@ -1142,9 +1464,7 @@ def main():
                                 logger.info(f"Tracking: {len(all_trackers)} match(es) (waiting for minute 60-74), {len(ready_for_bet)} ready for bet")
                                 if ready_for_bet:
                                     logger.info(f"🎯 {len(ready_for_bet)} match(es) ready for bet placement")
-                else:
-                    logger.info("No in-play match-specific markets found")
-                    print(f"[{iteration}] No in-play match-specific markets found")
+                # Note: Log for Betfair matches is already shown above (line 752), even when 0 matches
                 
                 # Reset error counter on success
                 consecutive_errors = 0

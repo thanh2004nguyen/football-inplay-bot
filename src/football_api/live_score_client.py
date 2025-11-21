@@ -115,18 +115,20 @@ class LiveScoreClient:
         # Note: This API uses query parameters for authentication, not headers
         self.session = requests.Session()
         self.session.headers.update({
-            'Accept': 'application/json'
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         })
         
         # Logging moved to main.py setup checklist
     
-    def _make_request(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    def _make_request(self, endpoint: str, params: Optional[Dict[str, Any]] = None, max_retries: int = 2) -> Optional[Dict[str, Any]]:
         """
-        Make API request with rate limiting and error handling
+        Make API request with rate limiting, error handling, and retry logic
         
         Args:
             endpoint: API endpoint (e.g., "/livescores")
             params: Optional query parameters
+            max_retries: Maximum number of retry attempts for connection errors (default: 2)
         
         Returns:
             Response JSON as dictionary, or None if error
@@ -138,51 +140,96 @@ class LiveScoreClient:
         
         url = f"{self.base_url}{endpoint}"
         
-        try:
-            logger.debug(f"Making request to: {url}")
-            response = self.session.get(url, params=params, timeout=30)
-            
-            # Log response status and headers for debugging
-            logger.debug(f"Response status: {response.status_code}")
-            logger.debug(f"Response headers: {dict(response.headers)}")
-            
-            # Check if response is empty
-            if not response.text or not response.text.strip():
-                logger.error(f"Empty response from Live Score API: {url}")
-                return None
-            
-            # Log first 200 chars of response for debugging
-            logger.debug(f"Response preview: {response.text[:200]}")
-            
-            response.raise_for_status()
-            
-            # Try to parse JSON
+        # Retry logic for connection errors
+        for attempt in range(max_retries + 1):
             try:
-                result = response.json()
-                # Record successful request
-                self.rate_limiter.record_request()
-                return result
-            except ValueError as json_error:
-                # Response is not valid JSON
-                logger.error(f"Invalid JSON response from Live Score API: {str(json_error)}")
-                logger.error(f"Response text (first 500 chars): {response.text[:500]}")
+                logger.debug(f"Making request to: {url} (attempt {attempt + 1}/{max_retries + 1})")
+                response = self.session.get(url, params=params, timeout=30)
+                
+                # Log response status and headers for debugging
+                logger.debug(f"Response status: {response.status_code}")
+                logger.debug(f"Response headers: {dict(response.headers)}")
+                
+                # Check if response is empty
+                if not response.text or not response.text.strip():
+                    logger.error(f"Empty response from Live Score API: {url}")
+                    return None
+                
+                # Log first 200 chars of response for debugging
+                logger.debug(f"Response preview: {response.text[:200]}")
+                
+                response.raise_for_status()
+                
+                # Try to parse JSON
+                try:
+                    result = response.json()
+                    # Record successful request
+                    self.rate_limiter.record_request()
+                    return result
+                except ValueError as json_error:
+                    # Response is not valid JSON
+                    logger.error(f"Invalid JSON response from Live Score API: {str(json_error)}")
+                    logger.error(f"Response text (first 500 chars): {response.text[:500]}")
+                    return None
+            
+            except requests.exceptions.HTTPError as e:
+                # HTTP errors (4xx, 5xx) - don't retry
+                error_text = e.response.text[:500] if e.response.text else "No response text"
+                logger.error(f"HTTP error in Live Score API request: {e.response.status_code}")
+                logger.error(f"Error response: {error_text}")
+                logger.error(f"Request URL: {url}")
                 return None
             
-        except requests.exceptions.HTTPError as e:
-            error_text = e.response.text[:500] if e.response.text else "No response text"
-            logger.error(f"HTTP error in Live Score API request: {e.response.status_code}")
-            logger.error(f"Error response: {error_text}")
-            logger.error(f"Request URL: {url}")
-            return None
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Network error in Live Score API request: {str(e)}")
-            logger.error(f"Request URL: {url}")
-            return None
-        except Exception as e:
-            logger.error(f"Unexpected error in Live Score API request: {str(e)}", exc_info=True)
-            return None
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+                # Connection errors - retry with delay
+                error_str = str(e)
+                is_connection_error = False
+                
+                # Check for specific connection errors
+                if isinstance(e, requests.exceptions.ConnectionError):
+                    # Check for RemoteDisconnected, ConnectionResetError, WinError 10054
+                    if "RemoteDisconnected" in error_str or "ConnectionResetError" in error_str or "10054" in error_str:
+                        is_connection_error = True
+                
+                if is_connection_error or isinstance(e, requests.exceptions.Timeout):
+                    if attempt < max_retries:
+                        # Retry with small delay (0-1 second)
+                        import random
+                        delay = random.uniform(0.5, 1.0)
+                        logger.warning(f"Connection error in Live Score API request (attempt {attempt + 1}/{max_retries + 1}): {error_str}")
+                        logger.warning(f"Retrying in {delay:.2f} seconds...")
+                        logger.warning(f"Request URL: {url}")
+                        time.sleep(delay)
+                        continue
+                    else:
+                        # All retries failed
+                        logger.error(f"LiveScore API connection error after {max_retries + 1} attempts: {error_str}")
+                        logger.error(f"Request URL: {url}")
+                        logger.warning("LiveScore API not reachable for this cycle, skipping this poll")
+                        return None
+                else:
+                    # Other connection errors - don't retry
+                    logger.error(f"Connection error in Live Score API request: {error_str}")
+                    logger.error(f"Request URL: {url}")
+                    return None
+            
+            except requests.exceptions.RequestException as e:
+                # Other request exceptions - don't retry
+                logger.error(f"Network error in Live Score API request: {str(e)}")
+                logger.error(f"Request URL: {url}")
+                return None
+            
+            except Exception as e:
+                # Unexpected errors - don't retry
+                logger.error(f"Unexpected error in Live Score API request: {str(e)}", exc_info=True)
+                return None
+        
+        # Should not reach here, but just in case
+        logger.error(f"LiveScore API request failed after {max_retries + 1} attempts")
+        logger.warning("LiveScore API not reachable for this cycle, skipping this poll")
+        return None
     
-    def get_live_matches(self, competition_ids: List[str] = None) -> List[Dict[str, Any]]:
+    def get_live_matches(self, competition_ids: List[str] = None) -> Optional[List[Dict[str, Any]]]:
         """
         Get list of currently live matches (filtered to only include actually live matches)
         
@@ -191,7 +238,8 @@ class LiveScoreClient:
                             If provided, only matches from these competitions will be returned
         
         Returns:
-            List of match dictionaries (only matches that are actually live and in specified competitions)
+            List of match dictionaries (only matches that are actually live and in specified competitions),
+            or None if API is not reachable (connection error after retries)
         """
         logger.debug("Fetching live matches from Live Score API")
         
@@ -206,19 +254,23 @@ class LiveScoreClient:
         if competition_ids:
             # Join competition IDs with comma as per API documentation
             competition_id_str = ",".join(str(cid) for cid in competition_ids)
-            params["competition_id"] = competition_id_str
             logger.debug(f"Filtering Live API matches by competition IDs: {competition_id_str}")
+            params["competition_id"] = competition_id_str
         
         result = self._make_request("/matches/live.json", params=params)
         
-        if result and isinstance(result, dict):
+        # If result is None, API is not reachable (connection error after retries)
+        if result is None:
+            return None
+        
+        if isinstance(result, dict):
             # API response structure from documentation:
             # {"success": true, "data": {"match": [...]}}
             if result.get("success") and "data" in result:
                 matches = result["data"].get("match", [])
                 
                 if not isinstance(matches, list):
-                    return []
+                    return []  # Empty list = 0 matches (API call successful but no matches)
                 
                 # Filter out matches that are not actually live
                 from football_api.parser import parse_match_minute, parse_match_competition
@@ -268,12 +320,12 @@ class LiveScoreClient:
                     live_matches.append(match)
                 
                 logger.debug(f"Retrieved {len(matches)} match(es) from API, filtered to {len(live_matches)} live match(es)")
-                return live_matches
+                return live_matches  # List (empty or with matches) = API call successful
             else:
                 logger.warning(f"API response indicates failure or unexpected structure: {result}")
-                return []
+                return []  # Empty list = 0 matches (API call successful but response indicates failure)
         
-        return []
+        return []  # Empty list = 0 matches (API call successful but unexpected response format)
     
     def get_match_details(self, match_id: str) -> Optional[Dict[str, Any]]:
         """

@@ -638,4 +638,175 @@ Matched: 1/4 event(s)
 | 7. Dynamic polling & fast polling | ✅ Fixed | Livescore 60s↔10s, Betfair 1s at 74'-76', strict discard at 60' |
 | 8. Live API competition filtering | ✅ Fixed | Filter Live API matches by Excel competitions |
 | 9. VAR delay for discard candidates | ✅ Fixed | Wait 3-5 minutes before discarding impossible matches to account for VAR decisions |
+| 10. LiveScore API error handling | ✅ Fixed | Retry logic (2 retries), User-Agent header, distinguish "API unreachable" vs "0 matches" |
+| 11. Betfair matching issue (Brazil Serie A/B) | ✅ Fixed | Stream API integration + Excel competition filtering |
+| 12. Config cleanup | ✅ Fixed | Removed unused config fields (min_odds, max_odds, stake_percent, max_liability) |
+| 13. Dynamic polling enabled for paid plan | ✅ Fixed | Enabled dynamic polling (60s↔10s) after customer upgraded to paid plan |
+
+---
+
+## Latest Fixes (November 2025):
+
+### Issue 10: LiveScore API Error Handling ✅
+**Problem:** Customer reported frequent connection errors:
+- `RemoteDisconnected('Remote end closed connection without response')`
+- `ConnectionResetError(10054, 'An existing connection was forcibly closed by the remote host')`
+- `WinError 10054` errors
+- Bot was treating these errors as "0 live matches" instead of "API temporarily unreachable"
+
+**Solution:**
+- **Retry Logic:**
+  - Added automatic retry mechanism (2 retries, total 3 attempts)
+  - Random delay between 0.5-1.0 seconds between retries
+  - Only retries for connection errors (`RemoteDisconnected`, `ConnectionResetError`, `WinError 10054`, `Timeout`)
+  - Does not retry for HTTP errors (4xx, 5xx)
+  
+- **User-Agent Header:**
+  - Added User-Agent header to all LiveScore API requests (as recommended by LiveScore API support)
+  - Header: `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36`
+  - Helps prevent `WinError 10054` connection reset errors
+  
+- **Error Distinction:**
+  - `get_live_matches()` now returns:
+    - `None` = API not reachable (connection error after retries)
+    - `[]` = 0 matches (API call successful but no matches)
+    - `[matches...]` = matches found
+  - Logs clearly distinguish between "API not reachable" and "0 matches"
+  
+- **Packages Added:**
+  - Added `pyopenssl>=23.2.0` to `requirements.txt`
+  - Added `ndg-httpsclient>=0.5.1` to `requirements.txt`
+  - Added `pyasn1>=0.5.0` to `requirements.txt`
+  - These packages improve TLS/SSL handshake stability
+
+**Files Modified:**
+- `src/football_api/live_score_client.py`: 
+  - Added retry logic in `_make_request()` method
+  - Added User-Agent header to session
+  - Modified `get_live_matches()` to return `None` when API is unreachable
+- `src/main.py`: 
+  - Updated to handle `None` return value from `get_live_matches()`
+  - Logs "LiveScore API not reachable for this cycle, skipping this poll" when API is unreachable
+- `requirements.txt`: Added SSL/TLS support packages
+
+**Result:**
+- Bot now handles transient network errors gracefully
+- Clear distinction between "API unreachable" and "no matches"
+- Reduced false "0 matches" logs when API has connection issues
+- More stable connection to LiveScore API
+
+**Example Log:**
+```
+Connection error in Live Score API request (attempt 1/3): ('Connection aborted.', ConnectionResetError(10054, ...))
+Retrying in 0.75 seconds...
+LiveScore API not reachable for this cycle, skipping this poll
+```
+
+---
+
+### Issue 11: Betfair Matching Issue (Brazil Serie A/B Not Detected) ✅
+**Problem:** Customer reported that Brazil Serie A and Serie B matches were correctly detected on LiveScore but not detected on Betfair, even though they were live on Betfair.
+
+**Root Cause:**
+- Betfair REST API `listMarketCatalogue` with `inPlay=True` filter was unreliable
+- Markets returned with `inPlay=True` but actual status was `SUSPENDED` or `CLOSED`
+- MarketBook verification was failing due to missing `marketDefinition` in response
+- Pagination issues with 200 market limit
+
+**Solution:**
+- **Stream API Integration:**
+  - Replaced `listMarketCatalogue` + `listMarketBook` verification with Stream API approach
+  - New function `get_live_markets_from_stream_api()` in `main.py`
+  - Stream API only returns markets that are actually `OPEN` and `inPlay=True` (verified in real-time)
+  
+- **Stream API Flow:**
+  1. Fetch market IDs from REST API (`listMarketCatalogue` with `inPlay=True`, `max_results=200`)
+  2. Connect to Stream API via SSL socket
+  3. Authenticate with Stream API
+  4. Subscribe to market IDs (batches of 200)
+  5. Collect messages for 5 seconds
+  6. Filter for `inPlay=True` and `status="OPEN"` from Stream API messages
+  7. Return only verified live markets
+  
+- **Excel Competition Filtering:**
+  - Filter markets by `competition_ids` from Excel after getting from Stream API
+  - Only keep matches from competitions mapped in Excel
+  - Improved error handling for missing `competition_id`
+
+**Files Modified:**
+- `src/main.py`: 
+  - Added `get_live_markets_from_stream_api()` function
+  - Replaced `listMarketCatalogue` calls with Stream API approach
+  - Enhanced competition filtering logic with error handling
+- `src/betfair/market_service.py`: 
+  - Improved pagination for `listMarketCatalogue`
+  - Enhanced `marketProjection` to include `COMPETITION` and `EVENT` data
+
+**Result:**
+- Bot now correctly detects all live matches on Betfair (including Brazil Serie A/B)
+- Only processes markets that are actually `OPEN` and `inPlay`
+- More accurate matching between Betfair and LiveScore
+- Better error handling for edge cases
+
+**Example Log:**
+```
+Betfair lives: 34952362_Tijuana v FC Juarez, 12345678_Gremio v Vasco da Gama
+Betfair: 1 available matches after comparing with Excel.
+```
+
+---
+
+### Issue 12: Config Cleanup ✅
+**Problem:** Customer asked about unused config fields:
+- `min_odds: 1.5`
+- `max_odds: 10`
+- `stake_percent: 5%`
+- `max_liability: 100`
+- These values are not used as stake and odds come from Excel file
+
+**Solution:**
+- **Removed Unused Fields:**
+  - Removed `max_odds` from `config.json`
+  - Removed `stake_percent` from `config.json`
+  - Removed `max_liability` from `config.json`
+  
+- **Kept with Clarification:**
+  - `min_odds: 1.5` - Kept as fallback value when `Min_Odds` column is missing in Excel
+  - Added comment: "min_odds: Fallback value when Min_Odds column is missing in Excel. Bot prioritizes Min_Odds from Excel (per competition + result), uses this config value only if Excel doesn't have it."
+  
+- **Added Notes:**
+  - Added `_note_stake_liability`: "Stake and liability are read from Excel file (Stake column), not from config. Each competition + result has its own Stake value in Excel."
+  - Clarified that `target_over: 2.5` is used as fallback logic when Excel targets are not available
+
+**Files Modified:**
+- `config/config.json`: Removed unused fields, added clarifying comments
+
+**Result:**
+- Cleaner config file with only used fields
+- Clear documentation of where values come from (Excel vs config)
+- No confusion about unused parameters
+
+---
+
+### Issue 13: Dynamic Polling Enabled for Paid Plan ✅
+**Problem:** Customer purchased paid plan for LiveScore API and requested to enable dynamic polling feature.
+
+**Solution:**
+- **Config Updated:**
+  - Changed `api_plan` from `"trial"` to `"paid"`
+  - Changed `rate_limit_per_day` from `1500` to `14500`
+  - Changed `dynamic_polling_enabled` from `false` to `true`
+  
+- **Dynamic Polling Behavior:**
+  - Default mode: 60 seconds when no matches in 60'-76' window
+  - Intensive mode: 10 seconds when at least 1 match in 60'-76' window and not discarded
+  - Automatically switches back to 60s when no more valid matches in window
+
+**Files Modified:**
+- `config/config.json`: Updated for paid plan configuration
+
+**Result:**
+- Dynamic polling is now active
+- More frequent updates when matches are in critical 60'-76' window
+- Efficient use of paid plan's 14500 requests/day limit
 
