@@ -1000,13 +1000,16 @@ def main():
                 
                 # Log ALL live events on Betfair (not filtered by Excel) - same format as test_betfair_stream_realtime.py
                 if all_live_events:
-                    event_strings = []
+                    logger.info(f"Betfair lives {len(all_live_events)} matches:")
                     for event_data in all_live_events.values():
                         event = event_data["event"]
                         event_id = event.get("id", "")
                         event_name = event.get("name", "N/A")
-                        event_strings.append(f"{event_id}_{event_name}")
-                    logger.info(f"Betfair lives: {', '.join(event_strings)}")
+                        competition = event_data.get("competition", {})
+                        competition_id = competition.get("id", "N/A")
+                        competition_name = competition.get("name", "N/A")
+                        # Format: eventid_name [competitionId_name]
+                        logger.info(f"  • {event_id}_{event_name} [{competition_id}_{competition_name}]")
                 # else:
                 #     logger.info("Betfair lives: (no live events)")
                 
@@ -1019,24 +1022,30 @@ def main():
                         competition = market.get("competition", {})
                         competition_id = competition.get("id")
                         competition_name = competition.get("name", "N/A")
+                        event_name = event.get("name", "N/A")
                         
                         # Filter by competition_ids from Excel (only keep matches from Excel competitions)
                         if competition_ids:
                             if not competition_id:
                                 # Market has no competition_id - skip it (cannot match with Excel)
-                                logger.debug(f"Skipping {event.get('name', 'N/A')} - no competition_id in market data")
                                 continue
                             
                             # Convert competition_id to int for comparison (Betfair returns as int or string)
                             try:
                                 comp_id_int = int(competition_id)
                             except (ValueError, TypeError):
-                                logger.debug(f"Skipping {event.get('name', 'N/A')} - invalid competition_id: {competition_id}")
                                 continue
                             
+                            # Convert competition_ids to ints for comparison (handle both int and string types)
+                            competition_ids_int = set()
+                            for cid in competition_ids:
+                                try:
+                                    competition_ids_int.add(int(cid))
+                                except (ValueError, TypeError):
+                                    continue
+                            
                             # Check if competition_id is in Excel competitions list
-                            if comp_id_int not in competition_ids:
-                                logger.debug(f"Skipping {event.get('name', 'N/A')} - competition_id {comp_id_int} ({competition_name}) not in Excel competitions")
+                            if comp_id_int not in competition_ids_int:
                                 continue  # Skip this market - not in Excel competitions
                         
                         if event_id and event_id not in unique_events:
@@ -1231,19 +1240,24 @@ def main():
                                     if competition_ids:
                                         if not competition_id:
                                             # Market has no competition_id - skip it (cannot match with Excel)
-                                            logger.debug(f"Skipping {event.get('name', 'N/A')} - no competition_id in market data")
                                             continue
                                         
                                         # Convert competition_id to int for comparison (Betfair returns as int or string)
                                         try:
                                             comp_id_int = int(competition_id)
                                         except (ValueError, TypeError):
-                                            logger.debug(f"Skipping {event.get('name', 'N/A')} - invalid competition_id: {competition_id}")
                                             continue
                                         
+                                        # Convert competition_ids to ints for comparison (handle both int and string types)
+                                        competition_ids_int = set()
+                                        for cid in competition_ids:
+                                            try:
+                                                competition_ids_int.add(int(cid))
+                                            except (ValueError, TypeError):
+                                                continue
+                                        
                                         # Check if competition_id is in Excel competitions list
-                                        if comp_id_int not in competition_ids:
-                                            logger.debug(f"Skipping {event.get('name', 'N/A')} - competition_id {comp_id_int} ({competition_name}) not in Excel competitions")
+                                        if comp_id_int not in competition_ids_int:
                                             continue  # Skip this market - not in Excel competitions
                                     
                                     if event_id and event_id not in unique_events:

@@ -554,10 +554,6 @@ def map_competitions_direct_from_excel(excel_path: str,
                 if not found:
                     unmatched_names.append(excel_betfair_name)
         
-        # Removed warning log for unmatched names to reduce noise
-        # if unmatched_names:
-        #     logger.warning(f"Direct mapping: {len(unmatched_names)} Betfair competition name(s) not found: {', '.join(unmatched_names[:10])}{'...' if len(unmatched_names) > 10 else ''}")
-        
         # Logging moved to main.py setup checklist
         return list(set(matched_ids))  # Remove duplicates
         
