@@ -813,11 +813,35 @@ class MatchMatcher:
             except (ValueError, TypeError):
                 pass
         
+        # If no mapping found, try to match by team names only (fallback)
         if not live_api_competition_id:
             if betfair_competition_id:
-                logger.debug(f"No Live API competition ID mapping found for Betfair competition ID {betfair_competition_id}")
+                logger.debug(f"No Live API competition ID mapping found for Betfair competition ID {betfair_competition_id}, trying team name matching as fallback")
             else:
-                logger.debug(f"Betfair competition ID not available for event '{betfair_event_name}'")
+                logger.debug(f"Betfair competition ID not available for event '{betfair_event_name}', trying team name matching as fallback")
+            
+            # Fallback: Try to match by team names only (without competition ID filter)
+            if betfair_home_team and betfair_away_team:
+                for live_match in live_matches:
+                    try:
+                        live_home_team, live_away_team = parse_match_teams(live_match)
+                        if self.match_teams(betfair_home_team, betfair_away_team, live_home_team, live_away_team):
+                            # Also check time if available
+                            if betfair_time and ("kickoff" in live_match or "start_time" in live_match):
+                                try:
+                                    time_str = live_match.get("kickoff") or live_match.get("start_time")
+                                    live_time = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+                                    if not self.match_time(betfair_time, live_time, tolerance_minutes=60):
+                                        continue
+                                except:
+                                    pass
+                            
+                            logger.debug(f"Matched '{betfair_event_name}' with '{live_home_team} v {live_away_team}' by team names only (no competition ID mapping)")
+                            self.match_cache[betfair_event_id] = str(live_match.get("id", ""))
+                            return live_match
+                    except:
+                        continue
+            
             return None
         
         betfair_home_team = None
@@ -940,6 +964,48 @@ class MatchMatcher:
             live_match_id = str(best_match.get("id", ""))
             self.match_cache[betfair_event_id] = live_match_id
             return best_match
+        
+        # Fallback: If no match found with competition ID, try matching by team names only
+        # (in case competition ID mapping is wrong or event is in different competition)
+        if betfair_home_team and betfair_away_team:
+            if live_api_competition_id:
+                logger.debug(f"No match found with competition ID {live_api_competition_id}, trying team name matching as fallback for '{betfair_event_name}'")
+            else:
+                logger.debug(f"No competition ID mapping, trying team name matching as fallback for '{betfair_event_name}'")
+            
+            best_fallback_match = None
+            best_fallback_similarity = 0.0
+            
+            for live_match in live_matches:
+                try:
+                    live_home_team, live_away_team = parse_match_teams(live_match)
+                    
+                    # Calculate similarity to find best match
+                    home_sim = self.calculate_team_similarity(betfair_home_team, live_home_team)
+                    away_sim = self.calculate_team_similarity(betfair_away_team, live_away_team)
+                    swapped_home_sim = self.calculate_team_similarity(betfair_home_team, live_away_team)
+                    swapped_away_sim = self.calculate_team_similarity(betfair_away_team, live_home_team)
+                    
+                    normal_avg = (home_sim + away_sim) / 2
+                    swapped_avg = (swapped_home_sim + swapped_away_sim) / 2
+                    match_sim = max(normal_avg, swapped_avg)
+                    
+                    # Use threshold 0.30 for fallback matching
+                    if match_sim >= 0.30:
+                        if match_sim > best_fallback_similarity:
+                            best_fallback_similarity = match_sim
+                            best_fallback_match = live_match
+                except Exception as e:
+                    logger.debug(f"Error in fallback matching: {str(e)}")
+                    continue
+            
+            if best_fallback_match:
+                live_home, live_away = parse_match_teams(best_fallback_match)
+                logger.info(f"✓ Matched '{betfair_event_name}' with '{live_home} v {live_away}' by team names only (similarity: {best_fallback_similarity:.2f}, competition ID: {live_api_competition_id or 'N/A'})")
+                self.match_cache[betfair_event_id] = str(best_fallback_match.get("id", ""))
+                return best_fallback_match
+            else:
+                logger.debug(f"No team name match found in fallback for '{betfair_event_name}' (Betfair: '{betfair_home_team} v {betfair_away_team}')")
         
         return None
     
