@@ -509,7 +509,6 @@ def log_tracking_list(match_tracker_manager, excel_path: Optional[str] = None):
                      if t.state != MatchState.DISQUALIFIED 
                      and t.state != MatchState.FINISHED]
     
-    logger.info("")
     logger.info("📊 Tracking List (Betfair event name + Live event name + min + score)")
     
     if not active_trackers:
