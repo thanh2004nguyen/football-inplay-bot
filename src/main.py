@@ -19,7 +19,7 @@ from core.logging_setup import setup_logging
 from auth.cert_login import BetfairAuthenticator
 from auth.keep_alive import KeepAliveManager
 from services.live import (parse_match_score, parse_match_minute, parse_goals_timeline,
-                           parse_match_teams, parse_match_competition)
+                                 parse_match_teams, parse_match_competition)
 from services.betfair import get_live_markets_from_stream_api
 from services.tracking import log_tracking_list
 from logic.match_tracker import MatchTrackerManager, MatchTracker, MatchState
@@ -423,10 +423,10 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
                 betfair_event_with_comp["competition"] = competition_obj
             elif event_data.get("markets"):
                 # Last resort: try to get from any market
-                for market in event_data["markets"]:
-                    market_comp = market.get("competition", {})
-                    if market_comp and isinstance(market_comp, dict):
-                        betfair_event_with_comp["competition"] = market_comp
+                    for market in event_data["markets"]:
+                        market_comp = market.get("competition", {})
+                        if market_comp and isinstance(market_comp, dict):
+                                betfair_event_with_comp["competition"] = market_comp
                         if not competition_id:
                             market_comp_id = market_comp.get("id")
                             if market_comp_id is not None:
@@ -434,7 +434,7 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
                                     competition_id = int(market_comp_id)
                                 except (ValueError, TypeError):
                                     pass
-                        break
+                                break
             
             # Skip if no competition ID (cannot match without it)
             if not competition_id:
@@ -724,14 +724,13 @@ def main():
         last_live_api_call_time = None  # None means never called before
         cached_live_matches = []  # Cache live matches between API calls
         
-        # Dynamic polling config for Livescore API
-        dynamic_polling_enabled = live_score_config.get("dynamic_polling_enabled", False) if live_score_config else False
-        default_polling_interval = live_score_config.get("default_polling_interval_seconds", 60) if live_score_config else 60
-        intensive_polling_interval = live_score_config.get("intensive_polling_interval_seconds", 10) if live_score_config else 10
+        # Polling intervals from config (shared between Betfair and Live API)
+        default_polling_interval = live_score_config.get("default_polling_interval_seconds", 60) if live_score_config else 60  # 60s for 0-60 and 60-74 without QUALIFIED
+        intensive_polling_interval = live_score_config.get("intensive_polling_interval_seconds", 10) if live_score_config else 10  # 10s for 60-74 with QUALIFIED
         
-        # Fast polling config for Betfair API
+        # Fast polling config for Betfair API (74-76 with QUALIFIED)
         fast_polling_enabled = monitoring_config.get("fast_polling_enabled", True)
-        fast_polling_interval = monitoring_config.get("fast_polling_interval_seconds", 1)
+        fast_polling_interval = monitoring_config.get("fast_polling_interval_seconds", 1)  # 1s for Betfair 74-76 with QUALIFIED
         fast_polling_window = monitoring_config.get("fast_polling_window", {"start_minute": 74, "end_minute": 76})
         fast_polling_start = fast_polling_window.get("start_minute", 74)
         fast_polling_end = fast_polling_window.get("end_minute", 76)
@@ -903,8 +902,6 @@ def main():
                             logger.warning(f"   ⚠️ Found matching IDs: {matches} - but still filtered out! This indicates a bug in the filtering logic.")
                         else:
                             logger.warning(f"   No matching IDs found between Stream API and Excel filter.")
-                elif len(unique_events) == 0 and not markets:
-                    logger.warning(f"⚠️ Betfair: 0 matches - Stream API returned no markets (markets=None or empty). This can happen if Stream API connection fails or no markets are inPlay.")
                 
                 # MỤC 6.1: Show ALL events (not just first 5) - log every iteration
                 if unique_events:
@@ -929,30 +926,47 @@ def main():
                 # Milestone 2: Match with Live API and start tracking
                 # Move Live API logging outside of unique_events check so it always runs
                 if live_score_client and match_matcher and match_tracker_manager:
-                    # Dynamic polling: Adjust interval based on matches in 60'-76' window
+                    # Determine Live API polling interval based on match states and minutes
+                    # Rules:
+                    # - 0-60: 60s
+                    # - 60-74 without QUALIFIED: 60s
+                    # - 60-74 with QUALIFIED: 10s
+                    # - 74-76 with QUALIFIED: 10s (still 10s, not changed)
                     current_time = time.time()
                     
-                    # Use dynamic polling if enabled, otherwise use static polling_interval_seconds
-                    if dynamic_polling_enabled:
-                            # Check if there are valid matches in 60'-76' window
-                            all_trackers = match_tracker_manager.get_all_trackers()
-                            from logic.match_tracker import MatchState
-                            valid_matches_in_window = [
-                                t for t in all_trackers
-                                if 60 <= t.current_minute <= 76
-                                and t.state != MatchState.DISQUALIFIED
-                                and t.state != MatchState.FINISHED
-                            ]
-                            
-                            if valid_matches_in_window:
-                                # Intensive mode: switch to faster polling
-                                current_live_api_polling_interval = intensive_polling_interval
-                            else:
-                                # Default mode: use slower polling
-                                current_live_api_polling_interval = default_polling_interval
+                    # Get all trackers to determine polling intervals
+                    all_trackers = match_tracker_manager.get_all_trackers() if match_tracker_manager else []
+                    from logic.match_tracker import MatchState
+                    
+                    # Check for QUALIFIED matches in 60-74 range
+                    qualified_in_60_74 = [
+                        t for t in all_trackers
+                        if 60 <= t.current_minute < 74
+                        and t.state == MatchState.QUALIFIED
+                        and t.state != MatchState.FINISHED
+                    ]
+                    
+                    # Determine Live API polling interval
+                    if qualified_in_60_74:
+                        # Has QUALIFIED in 60-74: use 10s for Live API
+                        current_live_api_polling_interval = intensive_polling_interval
                     else:
-                        # Static polling: use polling_interval_seconds from config
-                        current_live_api_polling_interval = live_api_polling_interval
+                        # No QUALIFIED in 60-74: use 60s for Live API (0-60 or 60-74 without QUALIFIED)
+                        # Note: 74-76 with QUALIFIED still uses 10s (handled by checking if any QUALIFIED exists)
+                        # But if no QUALIFIED in 60-74, we use 60s even if there's QUALIFIED in 74-76
+                        # Actually, we need to check if there's QUALIFIED in 74-76 too
+                        qualified_in_74_76 = [
+                            t for t in all_trackers
+                            if 74 <= t.current_minute < 76
+                            and (t.state == MatchState.QUALIFIED or t.state == MatchState.READY_FOR_BET)
+                            and t.state != MatchState.FINISHED
+                        ]
+                        if qualified_in_74_76:
+                            # Has QUALIFIED in 74-76: still use 10s for Live API
+                            current_live_api_polling_interval = intensive_polling_interval
+                        else:
+                            # No QUALIFIED anywhere: use 60s
+                            current_live_api_polling_interval = default_polling_interval
                     
                     # Check if we need to call API (first call or enough time has passed)
                     should_call_api = False
@@ -1004,30 +1018,30 @@ def main():
                         # API is not reachable (connection error after retries)
                         logger.warning("LiveScore API not reachable for this cycle, skipping this poll")
                     elif live_matches:
-                            # Filter out FINISHED matches and matches at minute 90+ before logging
-                            actual_live = []
-                            for lm in live_matches:
-                                status = str(lm.get("status", "")).upper()
-                                minute = parse_match_minute(lm)
-                                # Skip if FINISHED or minute >= 90 (match finished or about to finish)
-                                if "FINISHED" not in status and minute >= 0 and minute < 90:
-                                    actual_live.append(lm)
-                            
-                            # Format log message
-                            live_api_msg = f"Live API: {len(actual_live)} available matches after comparing with Excel."
-                            logger.info(live_api_msg)
-                            
-                            # Log ALL matches (not just first 5) - MỤC 6.1
-                            for i, lm in enumerate(actual_live, 1):  # Log ALL matches
-                                home, away = parse_match_teams(lm)
-                                comp = parse_match_competition(lm)
-                                minute = parse_match_minute(lm)
-                                score = parse_match_score(lm)
-                                status = lm.get("status", "N/A")
-                                match_msg = f"  [{i}] {home} v {away} ({comp}) - {score} @ {minute}' [{status}]"
-                                logger.info(match_msg)
-                            
-                            main._last_live_count = len(live_matches)
+                        # Filter out FINISHED matches and matches at minute 90+ before logging
+                        actual_live = []
+                        for lm in live_matches:
+                            status = str(lm.get("status", "")).upper()
+                            minute = parse_match_minute(lm)
+                            # Skip if FINISHED or minute >= 90 (match finished or about to finish)
+                            if "FINISHED" not in status and minute >= 0 and minute < 90:
+                                actual_live.append(lm)
+                        
+                        # Format log message
+                        live_api_msg = f"Live API: {len(actual_live)} available matches after comparing with Excel."
+                        logger.info(live_api_msg)
+                        
+                        # Log ALL matches (not just first 5) - MỤC 6.1
+                        for i, lm in enumerate(actual_live, 1):  # Log ALL matches
+                            home, away = parse_match_teams(lm)
+                            comp = parse_match_competition(lm)
+                            minute = parse_match_minute(lm)
+                            score = parse_match_score(lm)
+                            status = lm.get("status", "N/A")
+                            match_msg = f"  [{i}] {home} v {away} ({comp}) - {score} @ {minute}' [{status}]"
+                            logger.info(match_msg)
+                        
+                        main._last_live_count = len(live_matches)
                     else:
                         # Log when no matches available
                         logger.info(f"Live API: 0 available matches after comparing with Excel.")
@@ -1298,7 +1312,7 @@ def main():
                                             skip_reason = bet_result.get("reason", bet_result.get("skip_reason", "Unknown reason"))
                                         
                                         logger.warning(f"❌ BET SKIPPED: {tracker.betfair_event_name} (min {tracker.current_minute}, score {tracker.current_score}) - Reason: {skip_reason}")
-                
+                    
                 # Log tracking list EVERY 15s (real-time updates)
                 # Log AFTER Betfair and Live API logs, showing current state with latest data
                 project_root = Path(__file__).parent.parent
@@ -1310,28 +1324,47 @@ def main():
                 # Reset error counter on success
                 consecutive_errors = 0
                 
-                # Determine Betfair polling interval (fast polling for matches in 74'-76')
-                current_betfair_polling_interval = polling_interval
-                if fast_polling_enabled and match_tracker_manager:
+                # Determine Betfair polling interval based on match states and minutes
+                # Rules:
+                # - 0-60: 60s
+                # - 60-74 without QUALIFIED: 60s
+                # - 60-74 with QUALIFIED: 10s
+                # - 74-76 with QUALIFIED: 1s
+                if match_tracker_manager:
                     all_trackers = match_tracker_manager.get_all_trackers()
                     from logic.match_tracker import MatchState
-                    # Check if there are matches in fast polling window that are candidates
-                    candidates_in_fast_window = [
+                    
+                    # Check for QUALIFIED matches in different minute ranges
+                    qualified_in_60_74 = [
                         t for t in all_trackers
-                        if fast_polling_start <= t.current_minute < fast_polling_end
-                        and (t.state == MatchState.READY_FOR_BET or 
-                             (t.state == MatchState.QUALIFIED and t.current_minute >= 74))
+                        if 60 <= t.current_minute < 74
+                        and t.state == MatchState.QUALIFIED
+                        and t.state != MatchState.FINISHED
+                    ]
+                    
+                    qualified_in_74_76 = [
+                        t for t in all_trackers
+                        if 74 <= t.current_minute < 76
+                        and (t.state == MatchState.QUALIFIED or t.state == MatchState.READY_FOR_BET)
+                        and t.state != MatchState.FINISHED
                         and not t.bet_placed
                         and not getattr(t, 'bet_skipped', False)
                     ]
                     
-                    if candidates_in_fast_window:
-                        # Fast polling mode: use 1s interval
+                    if qualified_in_74_76 and fast_polling_enabled:
+                        # Has QUALIFIED in 74-76: use 1s for Betfair
                         current_betfair_polling_interval = fast_polling_interval
-                        logger.debug(f"Fast polling active: {len(candidates_in_fast_window)} candidate(s) in {fast_polling_start}'-{fast_polling_end}' window")
+                        logger.debug(f"Fast polling active: {len(qualified_in_74_76)} QUALIFIED match(es) in 74'-76' window")
+                    elif qualified_in_60_74:
+                        # Has QUALIFIED in 60-74: use 10s for Betfair
+                        current_betfair_polling_interval = intensive_polling_interval
+                        logger.debug(f"Intensive polling active: {len(qualified_in_60_74)} QUALIFIED match(es) in 60'-74' window")
                     else:
-                        # Normal polling mode
-                        current_betfair_polling_interval = polling_interval
+                        # No QUALIFIED: use 60s for Betfair (0-60 or 60-74 without QUALIFIED)
+                        current_betfair_polling_interval = default_polling_interval
+                else:
+                    # No tracker manager: use default
+                    current_betfair_polling_interval = default_polling_interval
                 
                 # Wait before next iteration (check stop event during sleep)
                 try:
