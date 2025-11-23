@@ -652,6 +652,123 @@ def get_live_api_competition_ids_from_excel(excel_path: str) -> List[str]:
         
         # Remove duplicates and return
         unique_ids = list(set(competition_ids))
+        return unique_ids
+        
+    except Exception as e:
+        logger.error(f"Error getting Live API competition IDs from Excel: {str(e)}")
+        return []
+
+
+def get_betfair_to_live_competition_mapping(excel_path: str) -> Dict[int, str]:
+    """
+    Create mapping from Betfair competition ID to Live API competition ID from Excel
+    
+    Args:
+        excel_path: Path to Excel file
+    
+    Returns:
+        Dictionary: {betfair_competition_id: live_api_competition_id}
+        Example: {67387: "96", 13: "24", ...}
+    """
+    try:
+        df = pd.read_excel(excel_path)
+        
+        mapping = {}
+        
+        # Check if both columns exist
+        if 'Competition-Betfair' not in df.columns or 'Competition-Live' not in df.columns:
+            logger.debug("Competition-Betfair or Competition-Live column not found")
+            return mapping
+        
+        # Process each row
+        for idx, row in df.iterrows():
+            betfair_comp = str(row.get('Competition-Betfair', '')).strip()
+            live_comp = str(row.get('Competition-Live', '')).strip()
+            
+            if not betfair_comp or not live_comp:
+                continue
+            
+            # Extract Betfair competition ID
+            betfair_comp_id = None
+            if "_" in betfair_comp:
+                try:
+                    parts = betfair_comp.split("_", 1)
+                    betfair_comp_id_str = parts[0].strip()
+                    if betfair_comp_id_str.isdigit():
+                        betfair_comp_id = int(betfair_comp_id_str)
+                except:
+                    pass
+            
+            # Extract Live API competition ID
+            live_comp_id = None
+            if "_" in live_comp:
+                try:
+                    parts = live_comp.split("_", 1)
+                    live_comp_id = parts[0].strip()
+                    if not live_comp_id.isdigit():
+                        live_comp_id = None
+                except:
+                    pass
+            
+            # Add to mapping if both IDs are valid
+            if betfair_comp_id and live_comp_id:
+                mapping[betfair_comp_id] = live_comp_id
+        
+        logger.debug(f"Created Betfair→Live API competition mapping: {len(mapping)} entries")
+        return mapping
+        
+    except Exception as e:
+        logger.error(f"Error creating Betfair→Live API competition mapping: {str(e)}")
+        return {}
+
+
+def get_live_api_competition_ids_from_excel(excel_path: str) -> List[str]:
+    """
+    Get Live API competition IDs from Excel file (from Competition-Live column)
+    
+    Extracts competition IDs from format "ID_Name" (e.g., "4_Serie A") or just uses name
+    if format is just "Name"
+    
+    Args:
+        excel_path: Path to Excel file
+    
+    Returns:
+        List of Live API competition IDs (as strings)
+    """
+    try:
+        df = pd.read_excel(excel_path)
+        
+        competition_ids = []
+        
+        # Priority: Use Competition-Live column if available
+        if 'Competition-Live' in df.columns:
+            competitions = df['Competition-Live'].dropna().unique().tolist()
+            
+            for comp in competitions:
+                comp_str = str(comp).strip()
+                if not comp_str:
+                    continue
+                
+                # Extract ID from format "ID_Name" (e.g., "4_Serie A")
+                if "_" in comp_str:
+                    try:
+                        parts = comp_str.split("_", 1)
+                        comp_id = parts[0].strip()
+                        # Validate that first part is a number (ID)
+                        if comp_id.isdigit():
+                            competition_ids.append(comp_id)
+                        else:
+                            # Not a valid ID format, skip
+                            logger.debug(f"Skipping competition '{comp_str}' - ID part '{comp_id}' is not numeric")
+                    except Exception as e:
+                        logger.debug(f"Error parsing competition '{comp_str}': {str(e)}")
+                else:
+                    # Format is just "Name" without ID - cannot filter by ID
+                    # We'll need to filter by name after getting matches
+                    logger.debug(f"Competition '{comp_str}' has no ID, will filter by name")
+        
+        # Remove duplicates and return
+        unique_ids = list(set(competition_ids))
         # Log removed per user request
         if not unique_ids:
             logger.info("No Live API competition IDs found in Excel (Competition-Live column may not have ID format)")

@@ -220,7 +220,9 @@ def load_competition_map_from_excel(excel_path: str) -> Dict[str, Dict[str, Any]
         return _competition_map_cache
     
     try:
-        df = pd.read_excel(excel_path)
+        # Read Excel with dtype=str for Result column to prevent auto-parsing
+        # This ensures "1-2" stays as "1-2" and doesn't become a date or number
+        df = pd.read_excel(excel_path, dtype={'Result': str})
         
         has_competition_live = 'Competition-Live' in df.columns
         has_competition_old = 'Competition' in df.columns
@@ -279,7 +281,28 @@ def load_competition_map_from_excel(excel_path: str) -> Dict[str, Dict[str, Any]
             # Get Result (normalized)
             result = None
             if pd.notna(row.get('Result')):
-                result = normalize_score(str(row['Result']).strip())
+                # Convert to string first to avoid Excel auto-parsing numbers/dates
+                raw_result = row.get('Result')
+                # If it's a number (Excel parsed it), convert back to string format
+                if isinstance(raw_result, (int, float)):
+                    # This shouldn't happen for scores, but handle it
+                    logger.warning(f"Excel Result column contains number instead of string: {raw_result} (row {idx})")
+                    result = None
+                else:
+                    raw_str = str(raw_result).strip()
+                    result = normalize_score(raw_str)
+                    # Debug: Log if we see suspicious values
+                    if result and len(result) > 3 and result.count("-") == 1:
+                        # Check if it looks like a valid score (e.g., "1-2", "0-0", "2-1")
+                        parts = result.split("-")
+                        if len(parts) == 2:
+                            try:
+                                home = int(parts[0])
+                                away = int(parts[1])
+                                # Valid score format
+                            except ValueError:
+                                # Invalid format - log warning
+                                logger.warning(f"Excel Result '{raw_str}' normalized to '{result}' - suspicious format (row {idx}, competition: {competition_name})")
             
             if not result:
                 continue
@@ -320,7 +343,7 @@ def load_competition_map_from_excel(excel_path: str) -> Dict[str, Dict[str, Any]
         _competition_id_map_cache = competition_id_map
         _excel_path_cache = excel_path
         
-        logger.info(f"Loaded competition map from Excel: {len(competition_map)} competition(s), {len(competition_id_map)} with ID mapping")
+        # Log removed - not needed
         return competition_map
         
     except FileNotFoundError:
@@ -523,9 +546,9 @@ def get_possible_scores_after_multiple_goals(current_score: str, max_goals: int 
         return set()
 
 
-def is_impossible_match_at_60(score: str, competition_name: str, excel_path: str) -> Tuple[bool, str]:
+def is_impossible_match_at_60(score: str, competition_name: str, excel_path: str, current_minute: int = 60) -> Tuple[bool, str]:
     """
-    Check if match is "impossible" at minute 60 - can never return to target results
+    Check if match is "impossible" from minute 0 to 60 - can never return to target results
     
     Strict logic: A match is impossible if:
     1. Current score already has more goals than allowed by Excel targets, OR
@@ -538,6 +561,7 @@ def is_impossible_match_at_60(score: str, competition_name: str, excel_path: str
         score: Current score (e.g., "2-1", "0-0")
         competition_name: Competition name (for Excel lookup)
         excel_path: Path to Excel file (Competitions_Results_Odds_Stake.xlsx)
+        current_minute: Current minute (0-60)
     
     Returns:
         (is_impossible, reason)
@@ -554,6 +578,7 @@ def is_impossible_match_at_60(score: str, competition_name: str, excel_path: str
         # Get Excel targets
         excel_targets = get_excel_targets_for_competition(competition_name, excel_path)
         if not excel_targets:
+            logger.debug(f"is_impossible_match_at_60: No Excel targets found for competition '{competition_name}' at path '{excel_path}'")
             return False, "No Excel targets available"
         
         # Normalize current score
@@ -561,8 +586,10 @@ def is_impossible_match_at_60(score: str, competition_name: str, excel_path: str
         
         # Check 1: Current score already out of targets
         normalized_targets = {normalize_score(t) for t in excel_targets}
+        logger.debug(f"is_impossible_match_at_60: Score '{score}' (normalized: '{normalized_current}'), Targets: {sorted(excel_targets)} (normalized: {sorted(normalized_targets)}), Competition: '{competition_name}'")
         if normalized_current not in normalized_targets:
-            return True, f"Score {score} at minute 60 is already out of targets {sorted(excel_targets)}"
+            logger.debug(f"is_impossible_match_at_60: Score '{score}' is NOT in targets {sorted(excel_targets)} → IMPOSSIBLE")
+            return True, f"Score {score} at minute {current_minute} is already out of targets {sorted(excel_targets)}"
         
         # Check 2: Current score + 1 goal would push it out of ALL targets
         # Get all possible scores after exactly 1 goal
@@ -573,10 +600,10 @@ def is_impossible_match_at_60(score: str, competition_name: str, excel_path: str
         
         if not matching_after_1_goal:
             # Even 1 goal would push it out of ALL targets → impossible
-            return True, f"Score {score} at minute 60: after 1 goal, all possible scores {sorted(possible_after_1_goal)} are out of targets {sorted(excel_targets)}"
+            return True, f"Score {score} at minute {current_minute}: after 1 goal, all possible scores {sorted(possible_after_1_goal)} are out of targets {sorted(excel_targets)}"
         
         # Match can still reach targets with 1 goal → not impossible
-        return False, f"Score {score} at minute 60: can still reach targets {sorted(matching_after_1_goal)} with 1 goal"
+        return False, f"Score {score} at minute {current_minute}: can still reach targets {sorted(matching_after_1_goal)} with 1 goal"
         
     except Exception as e:
         logger.warning(f"Error checking impossible match: {str(e)}")
@@ -587,7 +614,7 @@ def is_out_of_target(score: str, current_minute: int, target_over: float,
                     competition_name: Optional[str] = None,
                     excel_path: Optional[str] = None) -> Tuple[bool, str]:
     """
-    Check if match is out of target at minute 60
+    Check if match is out of target from minute 0 to 60
     
     Logic (per client requirements):
     - If Excel targets are provided: Check if current score + 1 goal OR +2 goals can create any score in Excel targets
@@ -596,12 +623,12 @@ def is_out_of_target(score: str, current_minute: int, target_over: float,
     - If not in Excel targets: Match is out of target and can be discarded early
     
     Fallback logic (if Excel not available):
-    - Current total goals >= (target_over + 0.5) at minute 60
-    - Current total goals = target_over at minute 60 (one goal would exceed target)
+    - Current total goals >= (target_over + 0.5) at minute 0-60
+    - Current total goals = target_over at minute 0-60 (one goal would exceed target)
     
     Args:
         score: Current score (e.g., "2-1", "0-0")
-        current_minute: Current match minute
+        current_minute: Current match minute (0-60)
         target_over: Target Over X.5 value (e.g., 2.5 for Over 2.5)
         competition_name: Competition name (for Excel lookup)
         excel_path: Path to Excel file (Competitions_Results_Odds_Stake.xlsx)
@@ -609,8 +636,8 @@ def is_out_of_target(score: str, current_minute: int, target_over: float,
     Returns:
         (is_out_of_target, reason)
     """
-    if current_minute != 60:
-        return False, "Not at minute 60"
+    if current_minute < 0 or current_minute > 60:
+        return False, f"Not in range 0-60 (current: {current_minute})"
     
     try:
         # Parse score
@@ -636,10 +663,10 @@ def is_out_of_target(score: str, current_minute: int, target_over: float,
                 
                 if not matching_scores:
                     # None of the possible scores (after +1 or +2 goals) are in Excel targets → out of target
-                    return True, f"Score {score} at minute 60: possible scores after +1/+2 goals {sorted(possible_scores)} are not in Excel targets {sorted(excel_targets)} for {competition_name}"
+                    return True, f"Score {score} at minute {current_minute}: possible scores after +1/+2 goals {sorted(possible_scores)} are not in Excel targets {sorted(excel_targets)} for {competition_name}"
                 else:
                     # At least one possible score is in Excel targets → still in target
-                    return False, f"Score {score} at minute 60: at least one possible score {sorted(matching_scores)} is in Excel targets"
+                    return False, f"Score {score} at minute {current_minute}: at least one possible score {sorted(matching_scores)} is in Excel targets"
             else:
                 # Excel file not found or competition not found → fallback to old logic
                 logger.debug(f"Excel targets not available for {competition_name}, using fallback logic")
@@ -648,7 +675,7 @@ def is_out_of_target(score: str, current_minute: int, target_over: float,
         # Check if already out of target (total goals >= target + 0.5)
         # For Over 2.5: if total >= 3, already out of target
         if total_goals >= int(target_over) + 1:
-            return True, f"Score {score} ({total_goals} goals) already exceeds target Over {target_over} at minute 60"
+            return True, f"Score {score} ({total_goals} goals) already exceeds target Over {target_over} at minute {current_minute}"
         
         # Check if one goal would make it out of target
         # For Over 2.5: if total = 2, one goal would make it 3 (out of target)
@@ -694,15 +721,15 @@ def is_qualified(score: str,
     Returns:
         (is_qualified, reason)
     """
-    # Strict discard check at minute 60: remove "impossible" matches
-    if strict_discard_at_60 and current_minute == 60 and excel_path and competition_name:
-        impossible, reason = is_impossible_match_at_60(score, competition_name, excel_path)
+    # Strict discard check from minute 0 to 60: remove "impossible" matches
+    if strict_discard_at_60 and 0 <= current_minute <= 60 and excel_path and competition_name:
+        impossible, reason = is_impossible_match_at_60(score, competition_name, excel_path, current_minute)
         if impossible:
-            logger.info(f"Match impossible at minute 60: {reason}")
+            # Log removed
             return False, f"Impossible match: {reason}"
     
-    # Early discard check: if at minute 60 and out of target, immediately disqualify
-    if early_discard_enabled and target_over is not None and current_minute == 60:
+    # Early discard check: if from minute 0 to 60 and out of target, immediately disqualify
+    if early_discard_enabled and target_over is not None and 0 <= current_minute <= 60:
         out_of_target, reason = is_out_of_target(score, current_minute, target_over, 
                                                 competition_name, excel_path)
         if out_of_target:

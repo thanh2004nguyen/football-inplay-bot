@@ -31,7 +31,8 @@ class MatchTracker:
                  target_over: float = None,
                  early_discard_enabled: bool = True,
                  strict_discard_at_60: bool = False,
-                 discard_delay_minutes: int = 4):
+                 discard_delay_minutes: int = 4,
+                 live_event_name: str = None):
         """
         Initialize match tracker
         
@@ -44,10 +45,12 @@ class MatchTracker:
             end_minute: End of goal detection window (default: 74)
             zero_zero_exception_competitions: Set of competitions with 0-0 exception
             var_check_enabled: Whether to check for cancelled goals (VAR)
+            live_event_name: Live API event name (e.g., "Team A v Team B")
         """
         self.betfair_event_id = betfair_event_id
         self.betfair_event_name = betfair_event_name
         self.live_match_id = live_match_id
+        self.live_event_name = live_event_name or betfair_event_name  # Fallback to Betfair name if not provided
         self.competition_name = competition_name
         self.start_minute = start_minute
         self.end_minute = end_minute
@@ -87,7 +90,7 @@ class MatchTracker:
         self.bet_skipped = False  # Track if bet was skipped to prevent retry
         self.bet_id: Optional[str] = None
         
-        logger.info(f"Match tracker created: {betfair_event_name} (Betfair ID: {betfair_event_id}, Live ID: {live_match_id})")
+        # Log removed - not needed
     
     def update_match_data(self, score: str, minute: int, goals: List[Dict[str, Any]]):
         """
@@ -120,34 +123,107 @@ class MatchTracker:
         from logic.qualification import is_qualified, get_competition_targets, normalize_score
         
         # Check if match is finished
+        # IMPORTANT: Don't mark as FINISHED if match is QUALIFIED and hasn't reached minute 75 yet
+        # This allows QUALIFIED matches to continue tracking until minute 75 for bet placement
         if self.current_minute < 0 or self.current_minute > 90:
-            if self.state != MatchState.FINISHED:
-                self.state = MatchState.FINISHED
-                logger.info(f"Match {self.betfair_event_name}: Finished")
-            return
+            # Only mark as FINISHED if:
+            # 1. Match is not QUALIFIED (can finish early)
+            # 2. OR match is QUALIFIED but has already passed minute 75 (bet window closed)
+            # 3. OR match is READY_FOR_BET and minute > 90 (match truly finished)
+            should_finish = False
+            
+            if self.state == MatchState.QUALIFIED:
+                # If QUALIFIED, only finish if minute > 90 AND (bet already placed OR minute > 75)
+                # This ensures we don't finish a QUALIFIED match before it can reach minute 75
+                if self.current_minute > 90:
+                    if self.bet_placed or self.current_minute > 75:
+                        should_finish = True
+                    else:
+                        # Match is QUALIFIED but minute is invalid (> 90) before reaching 75
+                        # This shouldn't happen, but log a warning
+                        logger.warning(f"⚠️ Match {self.betfair_event_name}: Invalid minute {self.current_minute} but QUALIFIED and hasn't reached 75 yet - keeping tracker alive")
+                        should_finish = False
+                elif self.current_minute < 0:
+                    # Negative minute means match not started or invalid - can finish
+                    should_finish = True
+            elif self.state == MatchState.READY_FOR_BET:
+                # If READY_FOR_BET, can finish if minute > 90 (match truly finished)
+                if self.current_minute > 90:
+                    should_finish = True
+                elif self.current_minute < 0:
+                    should_finish = True
+            else:
+                # For other states (WAITING_60, MONITORING_60_74, DISQUALIFIED), can finish normally
+                should_finish = True
+            
+            if should_finish:
+                if self.state != MatchState.FINISHED:
+                    self.state = MatchState.FINISHED
+                    # No log needed - tracking list will handle it
+                return
+            else:
+                # Don't finish yet - continue tracking
+                logger.debug(f"Match {self.betfair_event_name}: Not finishing yet (minute {self.current_minute}, state {self.state.value})")
+                return
         
-        # MỤC 3.4: Discard if minute > 74
+        # MỤC 3.4: Discard if minute > 74 (unless bet already placed OR match is QUALIFIED/READY_FOR_BET)
+        # IMPORTANT: If match is QUALIFIED, allow it to reach minute 75 to transition to READY_FOR_BET
         if self.current_minute > 74:
-            if self.state != MatchState.DISQUALIFIED:
+            # If bet already placed, continue tracking until match finished
+            if self.bet_placed:
+                # Match finished check is handled below
+                pass
+            # If match is QUALIFIED or READY_FOR_BET, allow it to continue (need to reach minute 75 for bet)
+            elif self.state == MatchState.QUALIFIED or self.state == MatchState.READY_FOR_BET:
+                # Allow match to continue - it will transition to READY_FOR_BET at minute 75
+                # or place bet during minute 75
+                pass
+            elif self.state != MatchState.DISQUALIFIED:
+                # Match is not QUALIFIED and minute > 74 - discard
                 self.state = MatchState.DISQUALIFIED
                 self.discard_reason = "minute>74"
-                logger.info(f"Match {self.betfair_event_name}: DISCARDED - minute {self.current_minute} > 74")
-            return
+                logger.info(f"Match {self.betfair_event_name}: DISCARDED - minute {self.current_minute} > 74 (not qualified)")
+                return
+            else:
+                # Already DISQUALIFIED, nothing to do
+                pass
         
-        # MỤC 3.3: Discard if current_score not in targets (check every update from minute 60+)
-        if self.current_minute >= 60 and excel_path:
+        # MỤC 3.3: Discard if current_score cannot reach targets (check every update from minute 0 onwards)
+        # Logic: Only discard if score is NOT in targets AND cannot reach targets by adding 1-2 goals
+        # IMPORTANT: Check continuously, not just 0-74, to catch score changes that make match impossible
+        # IMPORTANT: This check must run BEFORE state transitions and regardless of current state
+        if self.current_minute >= 0 and excel_path and self.state != MatchState.DISQUALIFIED and self.state != MatchState.FINISHED:
+            from logic.qualification import get_possible_scores_after_multiple_goals
             normalized_score = normalize_score(self.current_score)
             target_scores = get_competition_targets(self.competition_name, excel_path)
             
             if target_scores:  # Only check if targets exist
                 normalized_targets = {normalize_score(t) for t in target_scores}
                 
-                if normalized_score not in normalized_targets:
-                    if self.state != MatchState.DISQUALIFIED:
+                # Check 1: Is current score already in targets?
+                if normalized_score in normalized_targets:
+                    # Score is in targets → OK, don't discard
+                    logger.debug(f"Score check: Match '{self.betfair_event_name}', Score '{self.current_score}' is in targets {sorted(target_scores)} → OK")
+                else:
+                    # Score not in targets → Check if can reach targets by adding 1-2 goals
+                    possible_scores = get_possible_scores_after_multiple_goals(self.current_score, max_goals=2)
+                    normalized_possible = {normalize_score(s) for s in possible_scores}
+                    matching_scores = normalized_possible & normalized_targets
+                    
+                    if not matching_scores:
+                        # Cannot reach any target even with 1-2 goals → DISCARD
+                        # IMPORTANT: Discard regardless of current state (WAITING_60, MONITORING_60_74, QUALIFIED, READY_FOR_BET)
                         self.state = MatchState.DISQUALIFIED
-                        self.discard_reason = "score-not-target"
-                        logger.info(f"Match {self.betfair_event_name}: DISCARDED - score {self.current_score} not in targets {sorted(target_scores)} (minute {self.current_minute})")
-                    return
+                        self.discard_reason = f"score-cannot-reach-targets: score {self.current_score} at minute {self.current_minute} cannot reach any target {sorted(target_scores)} even with 1-2 goals"
+                        self.qualified = False
+                        logger.info(f"✘ {self.betfair_event_name}: DISQUALIFIED - score {self.current_score} @ {self.current_minute}' cannot reach targets {sorted(target_scores)}")
+                        return
+                    else:
+                        # Can reach targets with 1-2 goals → OK, don't discard
+                        logger.debug(f"Score check: Match '{self.betfair_event_name}', Score '{self.current_score}' can reach targets {sorted(matching_scores)} with 1-2 goals → OK")
+            else:
+                # No targets found - log warning but don't discard (might be new competition not in Excel yet)
+                logger.debug(f"No targets found for competition '{self.competition_name}' at minute {self.current_minute} - skipping discard check")
         
         # State transitions
         if self.state == MatchState.WAITING_60:
@@ -156,7 +232,7 @@ class MatchTracker:
                 # Store score at minute 60 to check if later score was reached in 60-74 window
                 if self.current_minute == 60 and self.score_at_minute_60 is None:
                     self.score_at_minute_60 = self.current_score
-                logger.info(f"Match {self.betfair_event_name}: Started monitoring (minute {self.current_minute})")
+                # Log removed
         
         # Also store score at minute 60 if we're already in MONITORING_60_74 state and it's exactly minute 60
         if self.state == MatchState.MONITORING_60_74 and self.current_minute == 60 and self.score_at_minute_60 is None:
@@ -266,7 +342,7 @@ class MatchTracker:
                         self.discard_candidate_since = datetime.now()
                         self.discard_candidate_reason = reason
                         self.discard_candidate_score = self.current_score
-                        logger.info(f"Match {self.betfair_event_name}: Marked as discard candidate (waiting {self.discard_delay_minutes} minutes for VAR) - {reason}")
+                        # Log removed
                     # If already a discard candidate, continue waiting (handled above)
                     return
                 
@@ -316,7 +392,10 @@ class MatchTracker:
             # Check if ready for bet (minute 75 only: 75:00 to 75:59)
             # Entry window is the full 75th minute (75:00 to 75:59)
             # IMPORTANT: Re-check if current score is still in targets at minute 75
+            logger.debug(f"Match {self.betfair_event_name}: QUALIFIED state - current_minute={self.current_minute}, checking if ready for bet...")
+            
             if 75 <= self.current_minute < 76:
+                logger.info(f"Match {self.betfair_event_name}: Minute {self.current_minute} is in bet window (75-76), checking score...")
                 # Re-check if current score is still in targets
                 if excel_path:
                     from logic.qualification import get_competition_targets, normalize_score
@@ -333,17 +412,22 @@ class MatchTracker:
                             self.qualified = False
                             logger.info(f"Match {self.betfair_event_name}: DISQUALIFIED at minute 75 - score {self.current_score} not in targets {sorted(target_scores)}")
                             return
+                        else:
+                            logger.debug(f"Match {self.betfair_event_name}: Score {self.current_score} is still in targets {sorted(target_scores)}")
                 
                 # Score is still in targets, proceed to READY_FOR_BET
                 self.state = MatchState.READY_FOR_BET
-                logger.info(f"Match {self.betfair_event_name}: Ready for bet (minute {self.current_minute})")
+                logger.info(f"✅ Match {self.betfair_event_name}: READY FOR BET (minute {self.current_minute}, score {self.current_score})")
             elif self.current_minute > 75 and not self.bet_placed:
                 # Minute 75 has passed and bet was not placed - mark as expired
                 # Per client requirement: if conditions never all true during entire 75th minute, match is expired
                 self.state = MatchState.DISQUALIFIED
                 self.discard_reason = "expired-minute-75"
                 self.qualified = False
-                logger.info(f"Match {self.betfair_event_name}: EXPIRED - minute {self.current_minute} > 75, bet not placed during minute 75")
+                logger.warning(f"⚠️ Match {self.betfair_event_name}: EXPIRED - minute {self.current_minute} > 75, bet not placed during minute 75")
+            elif self.current_minute < 75:
+                # Still waiting for minute 75
+                logger.debug(f"Match {self.betfair_event_name}: QUALIFIED but waiting for minute 75 (current: {self.current_minute})")
         
         elif self.state == MatchState.READY_FOR_BET:
             # Check if minute 75 has passed without bet placement
@@ -417,7 +501,7 @@ class MatchTrackerManager:
             tracker: MatchTracker instance
         """
         self.trackers[tracker.betfair_event_id] = tracker
-        logger.info(f"Added tracker for match: {tracker.betfair_event_name}")
+        # Log removed - not needed
     
     def get_tracker(self, betfair_event_id: str) -> Optional[MatchTracker]:
         """
@@ -440,7 +524,7 @@ class MatchTrackerManager:
         """
         if betfair_event_id in self.trackers:
             tracker = self.trackers.pop(betfair_event_id)
-            logger.info(f"Removed tracker for match: {tracker.betfair_event_name}")
+            # Log removed - not needed
     
     def get_all_trackers(self) -> List[MatchTracker]:
         """Get all active trackers"""

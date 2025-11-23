@@ -226,7 +226,7 @@ class BotService:
         try:
             from config.loader import load_config
             from auth.cert_login import BetfairAuthenticator
-            from betfair.market_service import MarketService
+            from services.betfair import MarketService
             
             # Load configuration
             config = load_config()

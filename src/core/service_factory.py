@@ -33,7 +33,7 @@ class ServiceFactory:
         Returns:
             BettingService
         """
-        from betfair.betting_service import BettingService
+        from services.betfair import BettingService
         return BettingService(app_key, session_token, api_endpoint)
     
     def create_market_service(self, app_key: str, session_token: str,
@@ -50,7 +50,7 @@ class ServiceFactory:
         Returns:
             MarketService
         """
-        from betfair.market_service import MarketService
+        from services.betfair import MarketService
         # MarketService doesn't need account_endpoint in constructor, but we store it for get_account_funds
         market_service = MarketService(app_key, session_token, api_endpoint)
         # Store account_endpoint for get_account_funds method
@@ -71,6 +71,6 @@ class ServiceFactory:
         Returns:
             LiveScoreClient
         """
-        from football_api.live_score_client import LiveScoreClient
+        from services.live import LiveScoreClient
         return LiveScoreClient(api_key, api_secret, base_url, rate_limit_per_day)
 
