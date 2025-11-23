@@ -866,42 +866,6 @@ def main():
                 # Always log, even if 0 matches (as per CONSOLE_FEED_EXAMPLE.md)
                 betfair_msg = f"Betfair: {len(unique_events)} available matches after comparing with Excel."
                 logger.info(betfair_msg)
-                if len(unique_events) == 0 and markets:
-                    logger.warning(f"⚠️ Betfair: 0 matches after Excel filtering, but Stream API returned {len(markets)} markets. All markets were filtered out by Excel competition filter.")
-                    # Log sample competition IDs from markets to help debug
-                    sample_comp_ids = []
-                    sample_comp_ids_int = []
-                    for market in markets[:5]:  # Check first 5 markets
-                        comp = market.get("competition", {})
-                        if isinstance(comp, dict):
-                            comp_id = comp.get("id")
-                            if comp_id:
-                                sample_comp_ids.append(str(comp_id))
-                                try:
-                                    sample_comp_ids_int.append(int(comp_id))
-                                except:
-                                    pass
-                    if sample_comp_ids:
-                        logger.warning(f"   Sample competition IDs from Stream API: {', '.join(sample_comp_ids)}")
-                        logger.warning(f"   Excel competition IDs filter (raw): {list(competition_ids)[:10] if competition_ids else 'None'}")
-                        # Convert Excel filter to ints for comparison
-                        excel_filter_ints = []
-                        for cid in list(competition_ids)[:10] if competition_ids else []:
-                            try:
-                                if isinstance(cid, int):
-                                    excel_filter_ints.append(cid)
-                                else:
-                                    excel_filter_ints.append(int(str(cid).strip()))
-                            except:
-                                pass
-                        logger.warning(f"   Excel competition IDs filter (as ints): {excel_filter_ints}")
-                        logger.warning(f"   Sample Stream API IDs (as ints): {sample_comp_ids_int}")
-                        # Check if any match
-                        matches = set(sample_comp_ids_int) & set(excel_filter_ints)
-                        if matches:
-                            logger.warning(f"   ⚠️ Found matching IDs: {matches} - but still filtered out! This indicates a bug in the filtering logic.")
-                        else:
-                            logger.warning(f"   No matching IDs found between Stream API and Excel filter.")
                 
                 # MỤC 6.1: Show ALL events (not just first 5) - log every iteration
                 if unique_events:
