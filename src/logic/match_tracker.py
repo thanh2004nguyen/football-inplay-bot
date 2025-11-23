@@ -192,6 +192,7 @@ class MatchTracker:
         # Logic: Only discard if score is NOT in targets AND cannot reach targets by adding 1-2 goals
         # IMPORTANT: Check continuously, not just 0-74, to catch score changes that make match impossible
         # IMPORTANT: This check must run BEFORE state transitions and regardless of current state
+        # IMPORTANT: Do NOT discard 0-0 scores at early minutes (< 60) as 0-0 is normal for new matches
         if self.current_minute >= 0 and excel_path and self.state != MatchState.DISQUALIFIED and self.state != MatchState.FINISHED:
             from logic.qualification import get_possible_scores_after_multiple_goals
             normalized_score = normalize_score(self.current_score)
@@ -200,8 +201,11 @@ class MatchTracker:
             if target_scores:  # Only check if targets exist
                 normalized_targets = {normalize_score(t) for t in target_scores}
                 
+                # Skip discard check for 0-0 scores at early minutes (< 60) - 0-0 is normal for new matches
+                if normalized_score == "0-0" and self.current_minute < 60:
+                    logger.debug(f"Score check: Match '{self.betfair_event_name}', Score '0-0' at minute {self.current_minute} - skipping discard check (normal for early match)")
                 # Check 1: Is current score already in targets?
-                if normalized_score in normalized_targets:
+                elif normalized_score in normalized_targets:
                     # Score is in targets → OK, don't discard
                     logger.debug(f"Score check: Match '{self.betfair_event_name}', Score '{self.current_score}' is in targets {sorted(target_scores)} → OK")
                 else:
