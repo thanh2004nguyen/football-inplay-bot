@@ -671,31 +671,19 @@ class MatchMatcher:
         home_similarity = self.calculate_team_similarity(betfair_home, live_home)
         away_similarity = self.calculate_team_similarity(betfair_away, live_away)
         
-        threshold_strict = 0.70
-        threshold_flexible = 0.60
+        # Very lenient thresholds to match more cases
+        threshold = 0.30
         
-        if home_similarity >= threshold_strict and away_similarity >= threshold_strict:
-            logger.debug(f"Teams matched (strict): '{betfair_home}' vs '{live_home}' ({home_similarity:.2f}), "
-                        f"'{betfair_away}' vs '{live_away}' ({away_similarity:.2f})")
-            return True
-        
-        if (home_similarity >= 0.80 and away_similarity >= threshold_flexible) or \
-           (away_similarity >= 0.80 and home_similarity >= threshold_flexible):
-            logger.debug(f"Teams matched (flexible): '{betfair_home}' vs '{live_home}' ({home_similarity:.2f}), "
+        if home_similarity >= threshold and away_similarity >= threshold:
+            logger.debug(f"Teams matched: '{betfair_home}' vs '{live_home}' ({home_similarity:.2f}), "
                         f"'{betfair_away}' vs '{live_away}' ({away_similarity:.2f})")
             return True
         
         swapped_home_similarity = self.calculate_team_similarity(betfair_home, live_away)
         swapped_away_similarity = self.calculate_team_similarity(betfair_away, live_home)
         
-        if swapped_home_similarity >= threshold_strict and swapped_away_similarity >= threshold_strict:
-            logger.debug(f"Teams matched (swapped, strict): '{betfair_home}' vs '{live_away}' ({swapped_home_similarity:.2f}), "
-                        f"'{betfair_away}' vs '{live_home}' ({swapped_away_similarity:.2f})")
-            return True
-        
-        if (swapped_home_similarity >= 0.80 and swapped_away_similarity >= threshold_flexible) or \
-           (swapped_away_similarity >= 0.80 and swapped_home_similarity >= threshold_flexible):
-            logger.debug(f"Teams matched (swapped, flexible): '{betfair_home}' vs '{live_away}' ({swapped_home_similarity:.2f}), "
+        if swapped_home_similarity >= threshold and swapped_away_similarity >= threshold:
+            logger.debug(f"Teams matched (swapped): '{betfair_home}' vs '{live_away}' ({swapped_home_similarity:.2f}), "
                         f"'{betfair_away}' vs '{live_home}' ({swapped_away_similarity:.2f})")
             return True
         
@@ -852,6 +840,34 @@ class MatchMatcher:
         best_match = None
         best_score = 0.0
         
+        # Count matches in the same competition
+        matches_in_same_competition = []
+        for live_match in live_matches:
+            try:
+                live_competition = parse_match_competition(live_match)
+                live_match_competition_id = None
+                if live_competition and "_" in live_competition:
+                    try:
+                        parts = live_competition.split("_", 1)
+                        live_match_competition_id = parts[0].strip()
+                        if not live_match_competition_id.isdigit():
+                            live_match_competition_id = None
+                    except:
+                        pass
+                
+                if live_api_competition_id and live_match_competition_id and live_api_competition_id == live_match_competition_id:
+                    matches_in_same_competition.append(live_match)
+            except:
+                pass
+        
+        # If only one match in the same competition, match with it (even if team names don't match)
+        if len(matches_in_same_competition) == 1 and live_api_competition_id:
+            single_match = matches_in_same_competition[0]
+            live_home, live_away = parse_match_teams(single_match)
+            logger.debug(f"Only one match in competition {live_api_competition_id}, matching '{betfair_event_name}' with '{live_home} v {live_away}' (team names may not match)")
+            self.match_cache[betfair_event_id] = str(single_match.get("id", ""))
+            return single_match
+        
         for live_match in live_matches:
             try:
                 live_competition = parse_match_competition(live_match)
@@ -866,12 +882,14 @@ class MatchMatcher:
                     except:
                         pass
                 
+                # First filter by competition ID - must match
                 if live_api_competition_id and live_match_competition_id:
                     if live_api_competition_id != live_match_competition_id:
                         continue
                 else:
                     continue
                 
+                # If competition ID matches, try to match teams
                 teams_match = False
                 if betfair_home_team and betfair_away_team:
                     live_home_team, live_away_team = parse_match_teams(live_match)
@@ -879,27 +897,36 @@ class MatchMatcher:
                         betfair_home_team, betfair_away_team,
                         live_home_team, live_away_team
                     )
+                    
+                    # If teams don't match, try time-based matching if available
+                    if not teams_match and betfair_time:
+                        if "kickoff" in live_match or "start_time" in live_match:
+                            try:
+                                time_str = live_match.get("kickoff") or live_match.get("start_time")
+                                live_time = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+                                if self.match_time(betfair_time, live_time, tolerance_minutes=60):
+                                    teams_match = True
+                                    logger.debug(f"Teams matched based on competition ID + time: '{betfair_home_team} v {betfair_away_team}' vs '{live_home_team} v {live_away_team}'")
+                            except:
+                                pass
+                    
                     if not teams_match:
                         continue
-                else:
-                    if not betfair_time:
-                        continue
+                elif not betfair_time:
+                    continue
                 
-                time_match = False
-                live_time = None
-                if "kickoff" in live_match or "start_time" in live_match:
-                    try:
-                        time_str = live_match.get("kickoff") or live_match.get("start_time")
-                        live_time = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
-                        time_match = self.match_time(betfair_time, live_time, tolerance_minutes=30)
-                    except:
-                        pass
-                
+                # Calculate score for best match selection
                 score = 1.0
                 if teams_match:
                     score += 1.0
-                if time_match:
-                    score += 0.1
+                if betfair_time and ("kickoff" in live_match or "start_time" in live_match):
+                    try:
+                        time_str = live_match.get("kickoff") or live_match.get("start_time")
+                        live_time = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+                        if self.match_time(betfair_time, live_time, tolerance_minutes=30):
+                            score += 0.1
+                    except:
+                        pass
                 
                 if score > best_score:
                     best_score = score
@@ -938,9 +965,22 @@ class MatchMatcher:
             except (ValueError, TypeError):
                 pass
         
+        # Extract Betfair team names
+        betfair_home_team = None
+        betfair_away_team = None
+        betfair_event_name = betfair_event.get("name", "")
+        if betfair_event_name and " v " in betfair_event_name:
+            try:
+                parts = betfair_event_name.split(" v ", 1)
+                betfair_home_team = parts[0].strip() if len(parts) > 0 else None
+                betfair_away_team = parts[1].strip() if len(parts) > 1 else None
+            except:
+                pass
+        
         competition_id_found = False
         competition_ids_in_live = set()
         time_match_found = False
+        team_match_found = False
         
         for live_match in live_matches:
             try:
@@ -958,6 +998,12 @@ class MatchMatcher:
                                 competition_id_found = True
                     except:
                         pass
+                
+                # Check team names if competition ID matches
+                if competition_id_found and betfair_home_team and betfair_away_team:
+                    live_home_team, live_away_team = parse_match_teams(live_match)
+                    if self.match_teams(betfair_home_team, betfair_away_team, live_home_team, live_away_team):
+                        team_match_found = True
                 
                 betfair_time = None
                 if "startTime" in betfair_event:
@@ -992,6 +1038,99 @@ class MatchMatcher:
                 reasons.append(f"Live API competition ID mismatch (Expected: {live_api_competition_id}, Found in Live API: {', '.join(sorted(list(competition_ids_in_live))[:5])}{'...' if len(competition_ids_in_live) > 5 else ''})")
             else:
                 reasons.append(f"Live API competition ID {live_api_competition_id} not found in Live API matches")
+        elif betfair_home_team and betfair_away_team and not team_match_found:
+            # Competition ID found but team names don't match
+            # Find potential matches and calculate similarity scores
+            # Only show matches with reasonable similarity (> 0.3) to avoid confusion
+            best_match_info = None
+            best_similarity = 0.0
+            potential_teams = []
+            min_similarity_threshold = 0.3  # Only consider matches with at least 30% similarity
+            
+            for live_match in live_matches:
+                try:
+                    live_competition = parse_match_competition(live_match)
+                    live_match_competition_id = None
+                    if live_competition and "_" in live_competition:
+                        parts = live_competition.split("_", 1)
+                        live_match_competition_id = parts[0].strip()
+                        if live_match_competition_id.isdigit() and live_match_competition_id == live_api_competition_id:
+                            live_home, live_away = parse_match_teams(live_match)
+                            
+                            # Calculate similarity for this match
+                            home_sim = self.calculate_team_similarity(betfair_home_team, live_home)
+                            away_sim = self.calculate_team_similarity(betfair_away_team, live_away)
+                            swapped_home_sim = self.calculate_team_similarity(betfair_home_team, live_away)
+                            swapped_away_sim = self.calculate_team_similarity(betfair_away_team, live_home)
+                            
+                            # Use best similarity (normal or swapped)
+                            normal_avg = (home_sim + away_sim) / 2
+                            swapped_avg = (swapped_home_sim + swapped_away_sim) / 2
+                            match_sim = max(normal_avg, swapped_avg)
+                            
+                            # Only consider matches with reasonable similarity
+                            if match_sim > best_similarity and match_sim >= min_similarity_threshold:
+                                best_similarity = match_sim
+                                best_match_info = {
+                                    "live_home": live_home,
+                                    "live_away": live_away,
+                                    "home_sim": home_sim,
+                                    "away_sim": away_sim,
+                                    "swapped_home_sim": swapped_home_sim,
+                                    "swapped_away_sim": swapped_away_sim,
+                                    "swapped": swapped_avg > normal_avg
+                                }
+                            
+                            # Only add to potential teams if similarity is reasonable
+                            if match_sim >= min_similarity_threshold:
+                                potential_teams.append(f"{live_home} v {live_away}")
+                                if len(potential_teams) >= 3:  # Limit to 3 examples
+                                    break
+                except:
+                    pass
+            
+            if best_match_info:
+                # Show detailed team name comparison
+                if best_match_info['swapped']:
+                    reason_detail = f"Team names mismatch: Betfair '{betfair_home_team}' vs Live '{best_match_info['live_away']}' (sim: {best_match_info['swapped_home_sim']:.2f}), Betfair '{betfair_away_team}' vs Live '{best_match_info['live_home']}' (sim: {best_match_info['swapped_away_sim']:.2f})"
+                else:
+                    reason_detail = f"Team names mismatch: Betfair '{betfair_home_team}' vs Live '{best_match_info['live_home']}' (sim: {best_match_info['home_sim']:.2f}), Betfair '{betfair_away_team}' vs Live '{best_match_info['live_away']}' (sim: {best_match_info['away_sim']:.2f})"
+                reasons.append(reason_detail)
+            elif potential_teams:
+                reasons.append(f"Team names mismatch (Betfair: '{betfair_home_team} v {betfair_away_team}', Live API potential matches: {', '.join(potential_teams)})")
+            else:
+                # No matches found with reasonable similarity - check if there are any matches in this competition at all
+                all_teams_in_competition = []
+                for live_match in live_matches:
+                    try:
+                        live_competition = parse_match_competition(live_match)
+                        live_match_competition_id = None
+                        if live_competition and "_" in live_competition:
+                            parts = live_competition.split("_", 1)
+                            live_match_competition_id = parts[0].strip()
+                            if live_match_competition_id.isdigit() and live_match_competition_id == live_api_competition_id:
+                                live_home, live_away = parse_match_teams(live_match)
+                                all_teams_in_competition.append(f"{live_home} v {live_away}")
+                                if len(all_teams_in_competition) >= 5:  # Limit to 5 examples
+                                    break
+                    except:
+                        pass
+                
+                if all_teams_in_competition:
+                    # Check if there's a time-based match (maybe the match hasn't started yet or team names are different)
+                    betfair_time_str = ""
+                    if betfair_event.get("startTime"):
+                        try:
+                            betfair_time = datetime.fromisoformat(betfair_event["startTime"].replace("Z", "+00:00"))
+                            betfair_time_str = f" (kickoff: {betfair_time.strftime('%H:%M')})"
+                        except:
+                            pass
+                    
+                    # Event exists in Betfair but not in Live API (not live yet or finished)
+                    # Show available matches in this competition for reference
+                    reasons.append(f"Event not live in Live API (Betfair: '{betfair_home_team} v {betfair_away_team}'{betfair_time_str}, Live API matches in this competition: {', '.join(all_teams_in_competition)})")
+                else:
+                    reasons.append(f"Event not live in Live API (Betfair: '{betfair_home_team} v {betfair_away_team}', no live matches found in Live API for this competition ID {live_api_competition_id})")
         
         if betfair_event.get("startTime") and not time_match_found:
             reasons.append("Kick-off time mismatch (no matches within 30 minutes)")

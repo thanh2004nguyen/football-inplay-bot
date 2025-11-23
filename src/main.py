@@ -419,27 +419,53 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
                                 continue
             
             # Set competition in betfair_event_with_comp
-            if competition_obj:
-                betfair_event_with_comp["competition"] = competition_obj
+            # IMPORTANT: Ensure competition object has "id" field before passing to match_betfair_to_live_api
+            if competition_id and competition_obj:
+                # Ensure competition object has the ID field
+                if isinstance(competition_obj, dict):
+                    if "id" not in competition_obj or competition_obj.get("id") != competition_id:
+                        # Create a new competition dict with ID
+                        betfair_event_with_comp["competition"] = {
+                            "id": competition_id,
+                            "name": competition_obj.get("name", competition_name)
+                        }
+                    else:
+                        betfair_event_with_comp["competition"] = competition_obj
+                else:
+                    betfair_event_with_comp["competition"] = {
+                        "id": competition_id,
+                        "name": competition_name
+                    }
             elif event_data.get("markets"):
                 # Last resort: try to get from any market
-                    for market in event_data["markets"]:
-                        market_comp = market.get("competition", {})
-                        if market_comp and isinstance(market_comp, dict):
-                                betfair_event_with_comp["competition"] = market_comp
-                        if not competition_id:
-                            market_comp_id = market_comp.get("id")
-                            if market_comp_id is not None:
-                                try:
-                                    competition_id = int(market_comp_id)
-                                except (ValueError, TypeError):
-                                    pass
+                for market in event_data["markets"]:
+                    market_comp = market.get("competition", {})
+                    if market_comp and isinstance(market_comp, dict):
+                        market_comp_id = market_comp.get("id")
+                        if market_comp_id is not None:
+                            try:
+                                competition_id = int(market_comp_id)
+                                # Ensure competition has ID field
+                                betfair_event_with_comp["competition"] = {
+                                    "id": competition_id,
+                                    "name": market_comp.get("name", competition_name)
+                                }
                                 break
+                            except (ValueError, TypeError):
+                                continue
             
             # Skip if no competition ID (cannot match without it)
             if not competition_id:
                 logger.info(f"⏭️  Skipping: No competition ID - {betfair_event_name}")
                 continue
+            
+            # Double-check: Ensure betfair_event_with_comp has competition with ID
+            if "competition" not in betfair_event_with_comp or not betfair_event_with_comp["competition"].get("id"):
+                logger.warning(f"⚠️  Competition ID {competition_id} found but not set in betfair_event_with_comp for '{betfair_event_name}' - setting it now")
+                betfair_event_with_comp["competition"] = {
+                    "id": competition_id,
+                    "name": competition_name
+                }
             
             live_match = match_matcher.match_betfair_to_live_api(
                 betfair_event_with_comp, live_matches, competition_name, betfair_to_live_mapping
@@ -561,10 +587,11 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
                 })
             else:
                 # Analyze rejection reason
+                # IMPORTANT: Use betfair_event_with_comp (has competition with ID) instead of betfair_event
                 rejection_reason = "Unknown reason"
                 if match_matcher and live_matches:
                     rejection_reason = match_matcher.analyze_rejection_reason(
-                        betfair_event, live_matches, competition_name, betfair_to_live_mapping
+                        betfair_event_with_comp, live_matches, competition_name, betfair_to_live_mapping
                     )
                 elif not live_matches:
                     rejection_reason = "No Live API matches available"
