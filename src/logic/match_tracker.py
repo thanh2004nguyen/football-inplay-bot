@@ -181,8 +181,8 @@ class MatchTracker:
             elif self.state != MatchState.DISQUALIFIED:
                 # Match is not QUALIFIED and minute > 74 - discard
                 self.state = MatchState.DISQUALIFIED
-                self.discard_reason = "minute>74"
-                logger.info(f"Match {self.betfair_event_name}: DISCARDED - minute {self.current_minute} > 74 (not qualified)")
+                self.discard_reason = f"minute {self.current_minute} > 74 (not qualified)"
+                logger.info(f"✘ {self.betfair_event_name}: DISQUALIFIED - minute {self.current_minute} > 74 (not qualified)")
                 return
             else:
                 # Already DISQUALIFIED, nothing to do

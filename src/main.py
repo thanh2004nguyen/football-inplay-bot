@@ -490,10 +490,8 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
                         
                         targets_str = ", ".join(target_scores) if target_scores else "N/A"
                         match_status = live_match.get("status", "N/A")
-                        reason = f"minute {minute} > 74"
-                        skip_message = f"⏭️  Skipping: {reason} - {tracker_competition_name} - {betfair_event_name} ({score}) [{targets_str}] {match_status}"
-                        logger.info(f"Skipping tracking for {betfair_event_name}: {reason} - Competition: {tracker_competition_name}, Score: {score}, Targets: [{targets_str}], Status: {match_status}")
-                        print(f"  {skip_message}")
+                        reason = f"minute {minute} > 74 (not qualified)"
+                        logger.info(f"✘ {betfair_event_name}: DISQUALIFIED - {reason}")
                         # Mark this event as logged
                         perform_matching._logged_skipped_events.add(event_id)
                     continue
@@ -1006,8 +1004,14 @@ def main():
                         # API is not reachable (connection error after retries)
                         logger.warning("LiveScore API not reachable for this cycle, skipping this poll")
                     elif live_matches:
-                            # Filter out FINISHED matches before logging
-                            actual_live = [lm for lm in live_matches if "FINISHED" not in str(lm.get("status", "")).upper()]
+                            # Filter out FINISHED matches and matches at minute 90+ before logging
+                            actual_live = []
+                            for lm in live_matches:
+                                status = str(lm.get("status", "")).upper()
+                                minute = parse_match_minute(lm)
+                                # Skip if FINISHED or minute >= 90 (match finished or about to finish)
+                                if "FINISHED" not in status and minute >= 0 and minute < 90:
+                                    actual_live.append(lm)
                             
                             # Format log message
                             live_api_msg = f"Live API: {len(actual_live)} available matches after comparing with Excel."
@@ -1052,10 +1056,10 @@ def main():
                             matching_refresh_interval=3600  # Not used, but required by function signature
                         )
                     
-                    # Update existing trackers with latest Live API data EVERY iteration
-                    # IMPORTANT: Always fetch fresh data for trackers, don't rely on cached live_matches
-                    # This ensures trackers are always up-to-date with real-time data
-                    if match_tracker_manager and live_score_client:
+                    # Update existing trackers with latest Live API data from live_matches cache
+                    # IMPORTANT: Use cached live_matches data to avoid rate limit issues
+                    # Only trackers in MONITORING_60_74, QUALIFIED, READY_FOR_BET will get fresh data via perform_matching()
+                    if match_tracker_manager and live_matches:
                         project_root = Path(__file__).parent.parent
                         excel_path = project_root / "competitions" / "Competitions_Results_Odds_Stake.xlsx"
                         
@@ -1063,86 +1067,48 @@ def main():
                         from logic.match_tracker import MatchState
                         
                         if all_trackers:
-                            # For each tracker, fetch fresh data directly from Live API
-                            # This bypasses any caching issues and ensures real-time updates
+                            # Update trackers with cached live_matches data (no API calls here to avoid rate limit)
+                            # IMPORTANT: Trackers in MONITORING_60_74, QUALIFIED, READY_FOR_BET will get fresh data 
+                            # via perform_matching() which calls get_match_details() only for important states
                             for tracker in all_trackers:
                                 try:
-                                    # Fetch fresh match details directly from Live API for this specific match
-                                    # This ensures we always get the latest data, not cached data
-                                    match_details = live_score_client.get_match_details(tracker.live_match_id)
+                                    # Find matching live match from cache (no API call)
+                                    live_match = None
+                                    for lm in live_matches:
+                                        if str(lm.get("id", "")) == tracker.live_match_id:
+                                            live_match = lm
+                                            break
                                     
-                                    if match_details:
-                                        # Update match data from fresh API response
-                                        score = parse_match_score(match_details)
-                                        minute = parse_match_minute(match_details)
+                                    if live_match:
+                                        # Update match data from cached live_match (no API call)
+                                        score = parse_match_score(live_match)
+                                        minute = parse_match_minute(live_match)
                                         
-                                        # IMPORTANT: If get_match_details returns invalid data (minute=-1, score=0-0), 
-                                        # skip update to preserve existing valid data from get_live_matches
-                                        if minute < 0 and score == "0-0":
-                                            logger.warning(f"Tracker '{tracker.betfair_event_name}': get_match_details returned invalid data (minute={minute}, score={score}), skipping update - will use fallback from live_matches")
-                                            match_details = None  # Force fallback to live_matches
-                                        else:
-                                            # Valid data - proceed with update
-                                            # Track if data changed
-                                            old_minute = tracker.current_minute
-                                            old_score = tracker.current_score
-                                            
-                                            if old_score != score or old_minute != minute:
-                                                logger.debug(f"Tracker '{tracker.betfair_event_name}' updated: minute {old_minute}→{minute}, score {old_score}→{score}")
-                                            
-                                            # Get goals from events endpoint if needed
-                                            goals = []
-                                            if tracker.state in [MatchState.MONITORING_60_74, MatchState.QUALIFIED, MatchState.READY_FOR_BET]:
-                                                # Events are already included in match_details
-                                                goals = parse_goals_timeline(match_details)
-                                            else:
-                                                goals = parse_goals_timeline(match_details)
-                                            
-                                            old_state = tracker.state
-                                            tracker.update_match_data(score, minute, goals)
-                                            
-                                            # Update state (this checks qualification, ready for bet, etc.)
-                                            excel_path_str = str(excel_path) if excel_path.exists() else None
-                                            if not excel_path_str:
-                                                logger.warning(f"⚠️ Excel path not available for tracker '{tracker.betfair_event_name}' - discard logic will not run")
-                                            tracker.update_state(excel_path=excel_path_str)
-                                            
-                                            # Log status changes
-                                            if tracker.state == MatchState.QUALIFIED and old_state != MatchState.QUALIFIED:
-                                                logger.info(f"✓ QUALIFIED: {tracker.betfair_event_name} (min {tracker.current_minute}, score {tracker.current_score}) - {tracker.qualification_reason}")
-                                                print(f"  ✓ QUALIFIED: {tracker.betfair_event_name} - {tracker.qualification_reason}")
-                                            elif tracker.state == MatchState.READY_FOR_BET and old_state != MatchState.READY_FOR_BET:
-                                                logger.info(f"🎯 READY FOR BET: {tracker.betfair_event_name} (min {tracker.current_minute}, score {tracker.current_score})")
-                                                print(f"  🎯 READY FOR BET: {tracker.betfair_event_name}")
+                                        # Get goals from live_match only (no API call)
+                                        # Important states (MONITORING_60_74, QUALIFIED, READY_FOR_BET) will get 
+                                        # fresh goals data via perform_matching() which calls get_match_details()
+                                        goals = parse_goals_timeline(live_match)
+                                        
+                                        # Update tracker with cached data
+                                        old_state = tracker.state
+                                        tracker.update_match_data(score, minute, goals)
+                                        
+                                        # Update state (this checks qualification, ready for bet, etc.)
+                                        excel_path_str = str(excel_path) if excel_path.exists() else None
+                                        if not excel_path_str:
+                                            logger.warning(f"⚠️ Excel path not available for tracker '{tracker.betfair_event_name}' - discard logic will not run")
+                                        tracker.update_state(excel_path=excel_path_str)
+                                        
+                                        # Log status changes
+                                        if tracker.state == MatchState.QUALIFIED and old_state != MatchState.QUALIFIED:
+                                            logger.info(f"✓ QUALIFIED: {tracker.betfair_event_name} (min {tracker.current_minute}, score {tracker.current_score}) - {tracker.qualification_reason}")
+                                            print(f"  ✓ QUALIFIED: {tracker.betfair_event_name} - {tracker.qualification_reason}")
+                                        elif tracker.state == MatchState.READY_FOR_BET and old_state != MatchState.READY_FOR_BET:
+                                            logger.info(f"🎯 READY FOR BET: {tracker.betfair_event_name} (min {tracker.current_minute}, score {tracker.current_score})")
+                                            print(f"  🎯 READY FOR BET: {tracker.betfair_event_name}")
                                     
-                                    # If match_details is None or invalid, try fallback from live_matches
-                                    if not match_details:
-                                        # Match not found in Live API or invalid data - try to find in live_matches list as fallback
-                                        logger.debug(f"Tracker '{tracker.betfair_event_name}' (live_match_id={tracker.live_match_id}) not found in Live API or invalid data, trying fallback")
-                                        
-                                        # Fallback: try to find in live_matches list
-                                        if live_matches:
-                                            live_match = None
-                                            tracker_live_id = str(tracker.live_match_id).strip()
-                                            
-                                            for lm in live_matches:
-                                                lm_id = str(lm.get("id", "")).strip()
-                                                if lm_id == tracker_live_id:
-                                                    live_match = lm
-                                                    break
-                                            
-                                            if live_match:
-                                                score = parse_match_score(live_match)
-                                                minute = parse_match_minute(live_match)
-                                                goals = parse_goals_timeline(live_match)
-                                                
-                                                old_state = tracker.state
-                                                tracker.update_match_data(score, minute, goals)
-                                                
-                                                excel_path_str = str(excel_path) if excel_path.exists() else None
-                                                tracker.update_state(excel_path=excel_path_str)
-                                                
-                                                logger.debug(f"Tracker '{tracker.betfair_event_name}' updated from fallback: minute={minute}, score={score}")
+                                    # If live_match not found in cache, skip update (will be handled in perform_matching)
+                                    # No fallback needed - perform_matching() will handle updates for important states
                                 except Exception as e:
                                     logger.warning(f"Error updating tracker '{tracker.betfair_event_name}': {str(e)}")
                                 

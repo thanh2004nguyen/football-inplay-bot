@@ -488,8 +488,9 @@ class LiveScoreClient:
                         continue
                     
                     minute = parse_match_minute(match)
-                    if minute < 0 or minute > 90:
-                        logger.debug(f"Skipping match (not live): {match.get('home', {}).get('name', 'N/A')} v {match.get('away', {}).get('name', 'N/A')} - Minute: {minute}")
+                    # Filter out matches at minute 90 or above (match finished or about to finish)
+                    if minute < 0 or minute >= 90:
+                        logger.debug(f"Skipping match (not live or finished): {match.get('home', {}).get('name', 'N/A')} v {match.get('away', {}).get('name', 'N/A')} - Minute: {minute}")
                         continue
                     
                     live_matches.append(match)
