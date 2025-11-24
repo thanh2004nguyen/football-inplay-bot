@@ -168,6 +168,7 @@ class MatchTracker:
         
         # MỤC 3.4: Discard if minute > 74 (unless bet already placed OR match is QUALIFIED/READY_FOR_BET)
         # IMPORTANT: If match is QUALIFIED, allow it to reach minute 75 to transition to READY_FOR_BET
+        # IMPORTANT: Skip this check for MONITORING_60_74 state - will check after qualification check
         if self.current_minute > 74:
             # If bet already placed, continue tracking until match finished
             if self.bet_placed:
@@ -177,6 +178,11 @@ class MatchTracker:
             elif self.state == MatchState.QUALIFIED or self.state == MatchState.READY_FOR_BET:
                 # Allow match to continue - it will transition to READY_FOR_BET at minute 75
                 # or place bet during minute 75
+                pass
+            # IMPORTANT: Skip check for MONITORING_60_74 - will check after qualification check below
+            elif self.state == MatchState.MONITORING_60_74:
+                # Skip this check - will check after qualification check to avoid disqualifying
+                # matches that have goals but haven't been qualified yet due to timing
                 pass
             elif self.state != MatchState.DISQUALIFIED:
                 # Match is not QUALIFIED and minute > 74 - discard
@@ -189,12 +195,12 @@ class MatchTracker:
                 pass
         
         # MỤC 3.3: Discard if current_score cannot reach targets (check every update from minute 0 onwards)
-        # Logic: Only discard if score is NOT in targets AND cannot reach targets by adding 1-2 goals
+        # Logic: Only discard if score is NOT in targets AND cannot reach targets by adding enough goals
         # IMPORTANT: Check continuously, not just 0-74, to catch score changes that make match impossible
         # IMPORTANT: This check must run BEFORE state transitions and regardless of current state
         # IMPORTANT: Do NOT discard 0-0 scores at early minutes (< 60) as 0-0 is normal for new matches
         if self.current_minute >= 0 and excel_path and self.state != MatchState.DISQUALIFIED and self.state != MatchState.FINISHED:
-            from logic.qualification import get_possible_scores_after_multiple_goals
+            from logic.qualification import get_possible_scores_after_multiple_goals, calculate_max_goals_needed
             normalized_score = normalize_score(self.current_score)
             target_scores = get_competition_targets(self.competition_name, excel_path)
             
@@ -209,22 +215,26 @@ class MatchTracker:
                     # Score is in targets → OK, don't discard
                     logger.debug(f"Score check: Match '{self.betfair_event_name}', Score '{self.current_score}' is in targets {sorted(target_scores)} → OK")
                 else:
-                    # Score not in targets → Check if can reach targets by adding 1-2 goals
-                    possible_scores = get_possible_scores_after_multiple_goals(self.current_score, max_goals=2)
+                    # Score not in targets → Calculate max_goals needed dynamically based on target scores
+                    max_goals_needed = calculate_max_goals_needed(self.current_score, target_scores)
+                    logger.debug(f"Score check: Match '{self.betfair_event_name}', Score '{self.current_score}' needs max {max_goals_needed} goals to reach targets {sorted(target_scores)}")
+                    
+                    # Check if can reach targets by adding up to max_goals_needed goals
+                    possible_scores = get_possible_scores_after_multiple_goals(self.current_score, max_goals=max_goals_needed)
                     normalized_possible = {normalize_score(s) for s in possible_scores}
                     matching_scores = normalized_possible & normalized_targets
                     
                     if not matching_scores:
-                        # Cannot reach any target even with 1-2 goals → DISCARD
+                        # Cannot reach any target even with max_goals_needed goals → DISCARD
                         # IMPORTANT: Discard regardless of current state (WAITING_60, MONITORING_60_74, QUALIFIED, READY_FOR_BET)
                         self.state = MatchState.DISQUALIFIED
-                        self.discard_reason = f"score-cannot-reach-targets: score {self.current_score} at minute {self.current_minute} cannot reach any target {sorted(target_scores)} even with 1-2 goals"
+                        self.discard_reason = f"score-cannot-reach-targets: score {self.current_score} at minute {self.current_minute} cannot reach any target {sorted(target_scores)} even with {max_goals_needed} goals"
                         self.qualified = False
-                        logger.info(f"✘ {self.betfair_event_name}: DISQUALIFIED - score {self.current_score} @ {self.current_minute}' cannot reach targets {sorted(target_scores)}")
+                        logger.info(f"✘ {self.betfair_event_name}: DISQUALIFIED - score {self.current_score} @ {self.current_minute}' cannot reach targets {sorted(target_scores)} even with {max_goals_needed} goals")
                         return
                     else:
-                        # Can reach targets with 1-2 goals → OK, don't discard
-                        logger.debug(f"Score check: Match '{self.betfair_event_name}', Score '{self.current_score}' can reach targets {sorted(matching_scores)} with 1-2 goals → OK")
+                        # Can reach targets with max_goals_needed goals → OK, don't discard
+                        logger.debug(f"Score check: Match '{self.betfair_event_name}', Score '{self.current_score}' can reach targets {sorted(matching_scores)} with up to {max_goals_needed} goals → OK")
             else:
                 # No targets found - log warning but don't discard (might be new competition not in Excel yet)
                 logger.debug(f"No targets found for competition '{self.competition_name}' at minute {self.current_minute} - skipping discard check")
@@ -367,6 +377,22 @@ class MatchTracker:
                         self.score_after_goal_in_window = self.current_score
                     self.state = MatchState.QUALIFIED
                     logger.info(f"Match {self.betfair_event_name}: QUALIFIED - {reason}")
+            
+            # IMPORTANT: Check minute > 74 AFTER qualification check
+            # This ensures matches with goals in 60-74 window get a chance to be qualified
+            # before being disqualified due to minute > 74
+            if self.current_minute > 74:
+                if self.qualified:
+                    # Match is qualified - allow it to continue to READY_FOR_BET
+                    pass
+                elif self.state != MatchState.DISQUALIFIED:
+                    # Match is not qualified and minute > 74 - discard
+                    # This handles the case where goal was detected but match wasn't qualified
+                    # (e.g., due to VAR cancellation or timing issues)
+                    self.state = MatchState.DISQUALIFIED
+                    self.discard_reason = f"minute {self.current_minute} > 74 (not qualified after qualification check)"
+                    logger.info(f"✘ {self.betfair_event_name}: DISQUALIFIED - minute {self.current_minute} > 74 (not qualified after qualification check)")
+                    return
             
             # Check if window passed
             if self.current_minute > self.end_minute:

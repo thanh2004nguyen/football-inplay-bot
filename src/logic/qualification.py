@@ -494,6 +494,80 @@ def get_possible_scores_after_one_goal(current_score: str) -> Set[str]:
         return set()
 
 
+def calculate_max_goals_needed(current_score: str, target_scores: Set[str]) -> int:
+    """
+    Calculate the minimum number of goals needed to reach any target score from current score.
+    
+    For each target score, calculate the minimum number of goals required to reach it.
+    Returns the maximum of these minimums (worst case scenario).
+    
+    Example:
+    - Current: "1-0", Targets: {"1-3", "2-1"}
+    - To reach "1-3": need 3 goals (0 home + 3 away)
+    - To reach "2-1": need 1 goal (1 home + 0 away)
+    - Max: 3 goals
+    
+    Args:
+        current_score: Current score (e.g., "1-0", "0-0")
+        target_scores: Set of target scores (e.g., {"1-3", "2-1"})
+    
+    Returns:
+        Maximum number of goals needed to reach any target (minimum 1, default 2 if no targets)
+    """
+    if not target_scores:
+        return 2  # Default fallback
+    
+    try:
+        parts = current_score.split("-")
+        if len(parts) != 2:
+            return 2  # Default fallback
+        
+        current_home = int(parts[0].strip())
+        current_away = int(parts[1].strip())
+        
+        max_goals_needed = 0  # Start from 0, will be updated if any reachable target found
+        
+        for target_score in target_scores:
+            try:
+                target_parts = normalize_score(target_score).split("-")
+                if len(target_parts) != 2:
+                    continue
+                
+                target_home = int(target_parts[0].strip())
+                target_away = int(target_parts[1].strip())
+                
+                # Check if target is reachable (target >= current for both home and away)
+                # We can only add goals, not subtract them
+                if target_home < current_home or target_away < current_away:
+                    # Target is not reachable (would require reducing goals, which is impossible)
+                    continue
+                
+                # Calculate goals needed for this target
+                home_goals_needed = target_home - current_home
+                away_goals_needed = target_away - current_away
+                total_goals_needed = home_goals_needed + away_goals_needed
+                
+                # Update max if this target needs more goals
+                if total_goals_needed > max_goals_needed:
+                    max_goals_needed = total_goals_needed
+                    
+            except (ValueError, IndexError):
+                continue
+        
+        # If no reachable targets found, return 0 (shouldn't happen in practice)
+        # Otherwise, ensure at least 1 goal if max_goals_needed is 0 (current score already matches a target)
+        # Cap at reasonable limit (e.g., 5 goals) to avoid excessive computation
+        if max_goals_needed == 0:
+            # Current score already matches a target, but we're checking if we can reach OTHER targets
+            # Return 1 as minimum to check if we can reach any other target
+            return 1
+        return min(max_goals_needed, 5)
+        
+    except (ValueError, IndexError) as e:
+        logger.warning(f"Error calculating max goals needed for score '{current_score}': {str(e)}")
+        return 2  # Default fallback
+
+
 def get_possible_scores_after_multiple_goals(current_score: str, max_goals: int = 2) -> Set[str]:
     """
     Get all possible scores after multiple goals (up to max_goals) are scored
