@@ -212,8 +212,24 @@ class MatchTracker:
                     logger.debug(f"Score check: Match '{self.betfair_event_name}', Score '0-0' at minute {self.current_minute} - skipping discard check (normal for early match)")
                 # Check 1: Is current score already in targets?
                 elif normalized_score in normalized_targets:
-                    # Score is in targets → OK, don't discard
-                    logger.debug(f"Score check: Match '{self.betfair_event_name}', Score '{self.current_score}' is in targets {sorted(target_scores)} → OK")
+                    # Score is in targets → Check if adding 1 goal would exit all targets
+                    # IMPORTANT: If adding 1 goal would make ALL possible scores exit targets, disqualify
+                    # This handles cases like: 1-0 with targets [1-0] → adding 1 goal → 2-0 or 1-1 → both exit targets
+                    possible_scores_after_1_goal = get_possible_scores_after_multiple_goals(self.current_score, max_goals=1)
+                    normalized_possible_after_1 = {normalize_score(s) for s in possible_scores_after_1_goal}
+                    matching_after_1_goal = normalized_possible_after_1 & normalized_targets
+                    
+                    if not matching_after_1_goal:
+                        # Adding 1 goal would exit ALL targets → DISCARD
+                        # This means match is at target but any goal would make it impossible to stay in targets
+                        self.state = MatchState.DISQUALIFIED
+                        self.discard_reason = f"score-would-exit-targets: score {self.current_score} @ {self.current_minute} is in targets {sorted(target_scores)}, but adding 1 goal would exit all targets"
+                        self.qualified = False
+                        logger.info(f"✘ {self.betfair_event_name}: DISQUALIFIED - score {self.current_score} @ {self.current_minute}' is in targets {sorted(target_scores)}, but adding 1 goal would exit all targets")
+                        return
+                    else:
+                        # At least one possible score after 1 goal is still in targets → OK
+                        logger.debug(f"Score check: Match '{self.betfair_event_name}', Score '{self.current_score}' is in targets {sorted(target_scores)} and can stay in targets after 1 goal → OK")
                 else:
                     # Score not in targets → Calculate max_goals needed dynamically based on target scores
                     max_goals_needed = calculate_max_goals_needed(self.current_score, target_scores)

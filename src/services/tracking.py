@@ -516,6 +516,12 @@ def log_tracking_list(match_tracker_manager, excel_path: Optional[str] = None):
         logger.info("")
         return
     
+    # Sort trackers by match start time (earliest first, latest last)
+    # Use created_at as proxy for match start time (tracker is created when match starts being tracked)
+    # Sort in descending order of current_minute first (more advanced matches first),
+    # then by created_at (earlier matches first if same minute)
+    active_trackers.sort(key=lambda t: (-t.current_minute if t.current_minute >= 0 else 999, t.created_at))
+    
     # Get Excel path if not provided
     if not excel_path:
         from pathlib import Path

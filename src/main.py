@@ -929,35 +929,37 @@ def main():
                     all_trackers = match_tracker_manager.get_all_trackers() if match_tracker_manager else []
                     from logic.match_tracker import MatchState
                     
-                    # Check for QUALIFIED matches in 60-74 range
-                    qualified_in_60_74 = [
+                    # Check for matches in 60-74 range (MONITORING_60_74 or QUALIFIED)
+                    # IMPORTANT: Check MONITORING_60_74 matches too, not just QUALIFIED
+                    # This ensures dynamic polling works when matches are in 60-74 window
+                    matches_in_60_74 = [
                         t for t in all_trackers
                         if 60 <= t.current_minute < 74
-                        and t.state == MatchState.QUALIFIED
+                        and (t.state == MatchState.MONITORING_60_74 or t.state == MatchState.QUALIFIED)
                         and t.state != MatchState.FINISHED
+                        and t.state != MatchState.DISQUALIFIED
+                    ]
+                    
+                    # Check for QUALIFIED/READY_FOR_BET matches in 74-76 range
+                    qualified_in_74_76 = [
+                        t for t in all_trackers
+                        if 74 <= t.current_minute < 76
+                        and (t.state == MatchState.QUALIFIED or t.state == MatchState.READY_FOR_BET)
+                        and t.state != MatchState.FINISHED
+                        and t.state != MatchState.DISQUALIFIED
                     ]
                     
                     # Determine Live API polling interval
-                    if qualified_in_60_74:
-                        # Has QUALIFIED in 60-74: use 10s for Live API
+                    if matches_in_60_74 or qualified_in_74_76:
+                        # Has matches in 60-74 or QUALIFIED in 74-76: use 10s for Live API
                         current_live_api_polling_interval = intensive_polling_interval
-                    else:
-                        # No QUALIFIED in 60-74: use 60s for Live API (0-60 or 60-74 without QUALIFIED)
-                        # Note: 74-76 with QUALIFIED still uses 10s (handled by checking if any QUALIFIED exists)
-                        # But if no QUALIFIED in 60-74, we use 60s even if there's QUALIFIED in 74-76
-                        # Actually, we need to check if there's QUALIFIED in 74-76 too
-                        qualified_in_74_76 = [
-                            t for t in all_trackers
-                            if 74 <= t.current_minute < 76
-                            and (t.state == MatchState.QUALIFIED or t.state == MatchState.READY_FOR_BET)
-                            and t.state != MatchState.FINISHED
-                        ]
+                        if matches_in_60_74:
+                            logger.debug(f"Intensive polling active: {len(matches_in_60_74)} match(es) in 60'-74' window (MONITORING_60_74 or QUALIFIED)")
                         if qualified_in_74_76:
-                            # Has QUALIFIED in 74-76: still use 10s for Live API
-                            current_live_api_polling_interval = intensive_polling_interval
-                        else:
-                            # No QUALIFIED anywhere: use 60s
-                            current_live_api_polling_interval = default_polling_interval
+                            logger.debug(f"Intensive polling active: {len(qualified_in_74_76)} QUALIFIED match(es) in 74'-76' window")
+                    else:
+                        # No matches in 60-74 or QUALIFIED in 74-76: use 60s for Live API
+                        current_live_api_polling_interval = default_polling_interval
                     
                     # Check if we need to call API (first call or enough time has passed)
                     should_call_api = False
