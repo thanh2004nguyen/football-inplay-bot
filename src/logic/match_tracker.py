@@ -593,4 +593,3 @@ class MatchTrackerManager:
                      if tracker.state == MatchState.DISQUALIFIED]
         for event_id in discarded:
             self.remove_tracker(event_id)
-
