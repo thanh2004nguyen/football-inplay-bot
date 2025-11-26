@@ -72,19 +72,27 @@ class BetOrchestrator:
         logger.info(f"🎲 ATTEMPTING BET: {tracker.betfair_event_name} (min {tracker.current_minute}, score {tracker.current_score}, competition: {tracker.competition_name})")
         
         # Execute bet
-        bet_result = execute_lay_bet(
-            market_service=self.market_service,
-            betting_service=self.betting_service,
-            event_id=tracker.betfair_event_id,
-            event_name=tracker.betfair_event_name,
-            target_over=target_over,
-            bet_config=bet_execution_config,
-            competition_name=tracker.competition_name,
-            current_score=tracker.current_score,
-            excel_path=str(self.excel_path)
-        )
+        try:
+            bet_result = execute_lay_bet(
+                market_service=self.market_service,
+                betting_service=self.betting_service,
+                event_id=tracker.betfair_event_id,
+                event_name=tracker.betfair_event_name,
+                target_over=target_over,
+                bet_config=bet_execution_config,
+                competition_name=tracker.competition_name,
+                current_score=tracker.current_score,
+                excel_path=str(self.excel_path)
+            )
+        except Exception as e:
+            # If exception occurs, mark as skipped and return
+            logger.error(f"Exception during bet execution for {tracker.betfair_event_name}: {str(e)}")
+            tracker.bet_skipped = True
+            self._record_skipped_match(tracker, None, f"Exception: {str(e)}")
+            return False
         
-        if bet_result and bet_result.get("success"):
+        # Check result - IMPORTANT: Always set bet_skipped if bet failed to prevent retry
+        if bet_result and isinstance(bet_result, dict) and bet_result.get("success"):
             # Mark bet as placed
             tracker.bet_placed = True
             tracker.bet_id = bet_result.get("betId", "")
@@ -101,11 +109,13 @@ class BetOrchestrator:
             logger.info(f"✅ BET PLACED SUCCESSFULLY: {tracker.betfair_event_name} - BetId={bet_result.get('betId')}, Stake={bet_result.get('stake')}, Liability={bet_result.get('liability')}, LayPrice={bet_result.get('layPrice')}")
             return True
         else:
-            # Mark as skipped
+            # Mark as skipped - IMPORTANT: This prevents retry on next iteration
             tracker.bet_skipped = True
             skip_reason = "Unknown reason"
             if bet_result and isinstance(bet_result, dict):
                 skip_reason = bet_result.get("reason", bet_result.get("skip_reason", "Unknown reason"))
+            elif bet_result is None:
+                skip_reason = "Bet execution returned None"
             
             logger.warning(f"❌ BET SKIPPED: {tracker.betfair_event_name} (min {tracker.current_minute}, score {tracker.current_score}) - Reason: {skip_reason}")
             

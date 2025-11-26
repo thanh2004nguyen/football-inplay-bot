@@ -199,7 +199,8 @@ class MatchTracker:
         # IMPORTANT: Check continuously, not just 0-74, to catch score changes that make match impossible
         # IMPORTANT: This check must run BEFORE state transitions and regardless of current state
         # IMPORTANT: Do NOT discard 0-0 scores at early minutes (< 60) as 0-0 is normal for new matches
-        if self.current_minute >= 0 and excel_path and self.state != MatchState.DISQUALIFIED and self.state != MatchState.FINISHED:
+        # IMPORTANT: Do NOT discard matches that are already QUALIFIED or READY_FOR_BET - once qualified, they should remain qualified until match ends
+        if self.current_minute >= 0 and excel_path and self.state != MatchState.DISQUALIFIED and self.state != MatchState.FINISHED and self.state != MatchState.QUALIFIED and self.state != MatchState.READY_FOR_BET:
             from logic.qualification import get_possible_scores_after_multiple_goals, calculate_max_goals_needed
             normalized_score = normalize_score(self.current_score)
             target_scores = get_competition_targets(self.competition_name, excel_path)
@@ -215,6 +216,7 @@ class MatchTracker:
                     # Score is in targets → Check if adding 1 goal would exit all targets
                     # IMPORTANT: If adding 1 goal would make ALL possible scores exit targets, disqualify
                     # This handles cases like: 1-0 with targets [1-0] → adding 1 goal → 2-0 or 1-1 → both exit targets
+                    # IMPORTANT: This check only runs for matches NOT yet QUALIFIED/READY_FOR_BET (see condition above)
                     possible_scores_after_1_goal = get_possible_scores_after_multiple_goals(self.current_score, max_goals=1)
                     normalized_possible_after_1 = {normalize_score(s) for s in possible_scores_after_1_goal}
                     matching_after_1_goal = normalized_possible_after_1 & normalized_targets
@@ -222,6 +224,7 @@ class MatchTracker:
                     if not matching_after_1_goal:
                         # Adding 1 goal would exit ALL targets → DISCARD
                         # This means match is at target but any goal would make it impossible to stay in targets
+                        # IMPORTANT: Only discard if match is not yet QUALIFIED or READY_FOR_BET
                         self.state = MatchState.DISQUALIFIED
                         self.discard_reason = f"score-would-exit-targets: score {self.current_score} @ {self.current_minute} is in targets {sorted(target_scores)}, but adding 1 goal would exit all targets"
                         self.qualified = False
@@ -242,7 +245,8 @@ class MatchTracker:
                     
                     if not matching_scores:
                         # Cannot reach any target even with max_goals_needed goals → DISCARD
-                        # IMPORTANT: Discard regardless of current state (WAITING_60, MONITORING_60_74, QUALIFIED, READY_FOR_BET)
+                        # IMPORTANT: Only discard if match is not yet QUALIFIED or READY_FOR_BET
+                        # (This check is skipped for QUALIFIED/READY_FOR_BET matches - see condition above)
                         self.state = MatchState.DISQUALIFIED
                         self.discard_reason = f"score-cannot-reach-targets: score {self.current_score} at minute {self.current_minute} cannot reach any target {sorted(target_scores)} even with {max_goals_needed} goals"
                         self.qualified = False
@@ -403,11 +407,39 @@ class MatchTracker:
                     pass
                 elif self.state != MatchState.DISQUALIFIED:
                     # Match is not qualified and minute > 74 - discard
-                    # This handles the case where goal was detected but match wasn't qualified
-                    # (e.g., due to VAR cancellation or timing issues)
+                    # Check why it wasn't qualified: no goal in 60-74 or no 0-0 exception
+                    from logic.qualification import check_goal_in_window, filter_cancelled_goals
+                    
+                    # Check if there was a goal in 60-74 window
+                    if self.var_check_enabled:
+                        valid_goals = filter_cancelled_goals(self.goals)
+                    else:
+                        valid_goals = self.goals
+                    has_goal_in_window = check_goal_in_window(valid_goals, self.start_minute, self.end_minute)
+                    
+                    # Check if 0-0 exception could apply
+                    has_zero_zero_exception = False
+                    if excel_path and self.current_score == "0-0":
+                        from logic.qualification import get_competition_targets, normalize_score
+                        target_scores = get_competition_targets(self.competition_name, excel_path)
+                        if target_scores:
+                            normalized_targets = {normalize_score(t) for t in target_scores}
+                            normalized_score = normalize_score(self.current_score)
+                            has_zero_zero_exception = normalized_score in normalized_targets
+                    
+                    # Build detailed reason
+                    if not has_goal_in_window and not has_zero_zero_exception:
+                        reason_detail = f"no goal in {self.start_minute}-{self.end_minute} window, no 0-0 exception"
+                    elif not has_goal_in_window:
+                        reason_detail = f"no goal in {self.start_minute}-{self.end_minute} window (score {self.current_score} is not 0-0 or 0-0 not in targets)"
+                    elif not has_zero_zero_exception:
+                        reason_detail = f"goal detected but not qualified (possibly VAR cancelled), no 0-0 exception"
+                    else:
+                        reason_detail = f"not qualified (unknown reason)"
+                    
                     self.state = MatchState.DISQUALIFIED
-                    self.discard_reason = f"minute {self.current_minute} > 74 (not qualified after qualification check)"
-                    logger.info(f"✘ {self.betfair_event_name}: DISQUALIFIED - minute {self.current_minute} > 74 (not qualified after qualification check)")
+                    self.discard_reason = f"minute {self.current_minute} > 74 ({reason_detail})"
+                    logger.info(f"✘ {self.betfair_event_name}: DISQUALIFIED - minute {self.current_minute} > 74 ({reason_detail})")
                     return
             
             # Check if window passed

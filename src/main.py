@@ -445,9 +445,9 @@ def perform_matching(unique_events: Dict[str, Dict[str, Any]],
             elif event_data.get("markets"):
                 # Last resort: try to get from any market
                 for market in event_data["markets"]:
-                    market_comp = market.get("competition", {})
-                    if market_comp and isinstance(market_comp, dict):
-                        market_comp_id = market_comp.get("id")
+                        market_comp = market.get("competition", {})
+                        if market_comp and isinstance(market_comp, dict):
+                            market_comp_id = market_comp.get("id")
                         if market_comp_id is not None:
                             try:
                                 competition_id = int(market_comp_id)

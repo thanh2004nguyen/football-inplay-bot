@@ -823,18 +823,6 @@ def is_qualified(score: str,
         )
         if qualified:
             return True, reason
-        
-        # Check if current score is in target scores (not just 0-0)
-        # If score is already in targets at minute 60-74, qualify immediately
-        # This handles cases like: score 1-0 @ 60' with targets [0-0, 1-0, 1-1] → qualify
-        if excel_path and competition_name:
-            target_scores = get_competition_targets(competition_name, excel_path)
-            if target_scores:
-                normalized_targets = {normalize_score(t) for t in target_scores}
-                normalized_score = normalize_score(score)
-                if normalized_score in normalized_targets:
-                    logger.info(f"Score in targets: score {score} is in targets {sorted(target_scores)} for '{competition_name}' at minute {current_minute}")
-                    return True, f"Score {score} is in targets {sorted(target_scores)}"
     
     # Check for goals in 60-74 window
     if check_goal_in_window(valid_goals, start_minute, end_minute):
